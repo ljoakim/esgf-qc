@@ -1,0 +1,221 @@
+# Example rulebook
+#
+# Running a check against a rulebook constists of two steps,
+# first a lookup table is used, then the rule section of
+# the document is evaluated.
+#
+# Note that only "flat" netcdf files are supported, i.e.
+# groups will not be dealt with.
+#
+# To run the rulebook check on a file:
+#
+# $ python -m cchecker -t rb:0.1 -O rb:rulebook:<path_to_rulebook>/rulebook_example.yml <file.nc>
+#
+---
+rulebook: "Example rulebook"
+version: "1"
+
+# The lookup table has subsections, which define values that can
+# be used by rules in the rule section below. Some subsections are
+# simply lists of values, others have specific logic to fetch and/or
+# compute values from the file that is checked.
+# Since some subsections use values from other subsections,
+# they are evaluated in a certain order.
+# Values from the table can fetched using a "lookup" object,
+# with a period separated string to access subsections of the
+# lookup table, e.g.: "{ lookup: 'cv.domain_id' }".
+#
+lookup_table:
+  # "cv" subsection contains a dictionary with lists of values
+  # which is meant to be used as a controlled vocabulary.
+  #
+  cv:
+    domain_id: ["EUR-12"]
+    variable_id: ["pr", "prc", "tas", "tasmax", "tasmin"]
+
+  # "cf" subsection defines values related to the cf conventions:
+  #   - "axis": a list of axes for which to find the names of the
+  #             corresponding coordinate variables. Note that this
+  #             effectively tests that these variables can be found,
+  #             rendering some of the rules below redundant.
+  #
+  cf:
+    axis: ["T", "Y", "X"]
+
+  # "cmip" subsection describes how to fetch values that are related
+  # to cmip-like standards:
+  #   - "drs":  a string drs that defines the filename structure of a
+  #             file name. Values will be extracted using this string.
+  #   - "time": precomputes the number of expected time points in
+  #             the file, base on a time range and frequency.
+  #
+  cmip:
+    drs: "<variable_id>_<domain_id>_<driving_source_id>_<driving_experiment_id>_<driving_variant_label>_<institution_id>_<source_id>_<version_realization>_<frequency>[_<time_range>].nc"
+    time: { range: { lookup: "cmip.drs.time_range" }, frequency: { lookup: "cmip.drs.frequency" }, variable: { lookup: "cf.axis.T" } }
+
+# Rule sections is a list of rule collections.
+# The sections will be evaluated in turn.
+#
+rule_sections:
+  # Example: checking the format of the netcdf data.
+  #
+  - section: "1"
+    heading: "Format"
+    rules:
+      - { data_model: "NETCDF4_CLASSIC" }
+
+  # Example: checking dimensions.
+  #
+  - section: "2"
+    heading: "Dimensions"
+    rules:
+      # With a "dimension" key in the brackets, the rule will translate to
+      # a dimension rule. Writing a dimension rule will by default make the
+      # existance of the dimension required. The same goes for variable and
+      # attribute rules (examples further below). To make a dimension (or
+      # attribute or variable) optional, add "required: false" to the rule.
+      #
+      # This example also uses the lookup table to fetch the expected name
+      # of the dimension.
+      #
+      - { dimension: { lookup: "cf.axis.T" } }
+      - { dimension: { lookup: "cf.axis.Y" } }
+      - { dimension: { lookup: "cf.axis.X" } }
+      - { dimension: "bnds", size: 2 }
+
+      # The rulebook implementation can also expand a rule definition that
+      # has a list of dimensions. In this way, the rules for the T/Y/X axes
+      # specified above, can be written as one rule. The list will trigger
+      # an expansion into three separate rules, one for each element in the
+      # list.
+      #
+      - { dimension: [{ lookup: "cf.axis.T" }, { lookup: "cf.axis.Y" }, { lookup: "cf.axis.X" }] }
+
+  # Example: checking coordinate variables.
+  # The names of the coordinate variables are looked up in the lookup table.
+  #
+  - section: "3"
+    heading: "Coordinate variables"
+    rules:
+      - variable: { lookup: "cf.axis.T" }
+        dimensions: [{ lookup: "cf.axis.T" }]
+        rules:
+          # This first rule will be translated to a rule for the variable data.
+          #
+          - { dtype: "float64", byteorder: "=", monotonicity: "<", shape: [{ lookup: "cmip.time.count" }] }
+
+          # Variable attribute rules.
+          # "axis" must equal "T", and "units" must follow a certain regex pattern.
+          #
+          - { attribute: "axis", must_equal: "T" }
+          - { attribute: "units", pattern: "^days since [1-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]((T| )[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z?)?$" }
+
+      - variable: { lookup: "cf.axis.Y" }
+        rules:
+          - { attribute: "axis", must_equal: "Y" }
+          - { dtype: "float64", byteorder: "=", monotonicity: "<" }
+
+      - variable: { lookup: "cf.axis.X" }
+        rules:
+          - { attribute: "axis", must_equal: "X" }
+          - { dtype: "float64", byteorder: "=", monotonicity: "<" }
+
+  # Example: global attributes.
+  #
+  - section: "4"
+    heading: "Global attribute values"
+    rules:
+      - { attribute: "Conventions", allowed_values: ["CF-1.7", "CF-1.11"] }
+      - { attribute: "creation_date", pattern: "^[1-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z$" }
+
+      # Attribute values are checked both against the cv,
+      # and the values extracted from the file name using the drs.
+      #
+      - { attribute: "domain_id", allowed_values: { lookup: "cv.domain_id" } }
+      - { attribute: "domain_id", must_equal: { lookup: "cmip.drs.domain_id" } }
+
+      - { attribute: "variable_id", allowed_values: { lookup: "cv.variable_id" } }
+      - { attribute: "variable_id", must_equal: { lookup: "cmip.drs.variable_id" } }
+      - { attribute: "driving_source_id", must_equal: { lookup: "cmip.drs.driving_source_id" } }
+
+  # Example: coordinate system.
+  #
+  - section: "5"
+    heading: "Coordinate system"
+    rules:
+      # A "description" can be added to a rule. This description will be added
+      # to the result output whenever a rule fails. Since many rules generally
+      # produce generic messages, this makes it easier to inform what specific
+      # check failed.
+      #
+      # This particular rule is an "if-then" rule, which will execute the "then"
+      # section only if the "if" section evaluates to True.
+      #
+      - description: "Validating requirements for Lambert Conformal Conic crs."
+        if: { variable: "crs", rules: { attribute: "grid_mapping_name", must_equal: "lambert_conformal_conic" } }
+        then:
+          # Example of a "logic" rule. A logic rule has a list of rules to be evaluated,
+          # and the rules fails if the "logic" condition of the list is not met.
+          # Values of "logic" can be "all", "exactly one", "at least one" or "none".
+          #
+          - description: "There must be a coordinate variable and dimension named 'y' or 'Y'."
+            logic: "exactly one"
+            rules:
+              - { variable: "y", dimensions: ["y"] }
+              - { variable: "Y", dimensions: ["Y"] }
+
+          - description: "There must be a coordinate variable and dimension named 'x' or 'X'."
+            logic: "exactly one"
+            rules:
+              - { variable: "x", dimensions: ["x"] }
+              - { variable: "X", dimensions: ["X"] }
+
+  # Example: data variable checks.
+  #
+  - section: "6"
+    heading: "Common data variable requirements"
+    rules:
+      - description: "Check existance of one and only one data variable."
+        logic: "exactly one"
+        rules:
+          # This rule will expand into several rules, one per element in the looked up list.
+          # With logic "exactly one", this rule will ensure the file only contains
+          # one data variable (a variable with a name in the cv's variable_id list)
+          #
+          - { variable: { lookup: "cv.variable_id" } }
+
+      - description: "Check data variable data requirements."
+        variable: { lookup: "cv.variable_id" }
+
+        # Set required to false. The logic rule above will make sure one
+        # and only one variable exists.
+        #
+        required: false
+        dimensions: [{ lookup: "cf.axis.T" }, { lookup: "cf.axis.Y" }, { lookup: "cf.axis.X" }]
+        compression_type: "zlib"
+        compression_level: 1
+        rules:
+          - { dtype: "float32", byteorder: "=" }
+          - { attribute: "grid_mapping", must_equal: "crs" }
+          - { attribute: "missing_value", must_equal: 1.0e+20 }
+          - { attribute: "_FillValue", must_equal: 1.0e+20 }
+
+  # Example: requirements for specific data variables.
+  #
+  - section: "7"
+    heading: "Data variable attribute requirements"
+    rules:
+      # The variables must be set as optional, otherwise all variables will be
+      # required to exist. Unique existance is checked in another rule.
+      #
+      - variable: "pr"
+        required: false
+        rules:
+          - { attribute: "standard_name", must_equal: "precipitation_flux" }
+          - { attribute: "long_name", must_equal: "Precipitation" }
+
+      - variable: "prc"
+        required: false
+        rules:
+          - { attribute: "standard_name", must_equal: "convective_precipitation_flux" }
+          - { attribute: "long_name", must_equal: "Convective Precipitation" }
