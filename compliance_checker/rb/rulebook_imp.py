@@ -34,7 +34,8 @@ class RuleBook:
         results = []
         if self._rulebook.lookup_table:
             self._lookup_table, result = self._rebuild_lookup_table(ds)
-            results.append(result)
+            if not result_is_success(result):
+                return [result]
         for rule_section in self._rulebook.rule_sections:
             result = self._apply_rule_section(ds, rule_section)
             result.msgs = [self._flatten_result_tree(result)]  # Assign single hierarchical error message
@@ -86,7 +87,7 @@ class RuleBook:
                     try:
                         lookup_table["cf"]["axis"][axis.value] = set(axis_method_mapping[axis.value](ds)).intersection(axis_variables).pop()
                     except Exception:
-                        ctx.add_failure(f"Failed to get name for '{axis.value}' axis.")
+                        ctx.add_failure(f"While building lookup table (cf.axis): Failed to get name for '{axis.value}' axis.")
 
         # CMIP table
         #
@@ -96,7 +97,7 @@ class RuleBook:
                 try:
                     lookup_table["cmip"]["drs"] = cmiputil.extract_drs_elements(pathlib.Path(ds.filepath()), self._rulebook.lookup_table.cmip.drs)
                 except Exception as e:
-                    ctx.add_failure(str(e))
+                    ctx.add_failure(f"While building lookup table (cmip.drs): {e}")
             if self._rulebook.lookup_table.cmip.time is not None:
                 lookup_table["cmip"]["time"] = {}
                 try:
@@ -107,7 +108,7 @@ class RuleBook:
                         var.calendar,
                     )
                 except Exception as e:
-                    ctx.add_failure(str(e))
+                    ctx.add_failure(f"While building lookup table (cmip.time): {e}")
 
         return lookup_table, ctx.to_result()
 
@@ -324,6 +325,8 @@ class RuleBook:
         result.children = rules_result_list
         if result_is_success(result):
             result.msgs.append(f"Variable '{variable_name}' meets specified rules.")
+        else:
+            result.msgs.insert(0, f"Variable '{variable_name}' has issues.")
         return result
 
     def _apply_variable_data_rule(
@@ -360,6 +363,20 @@ class RuleBook:
                 ctx.assert_true(
                     np.all(operator[r.monotonicity](var_data[:-1], var_data[1:])),
                     f"Data does not fulfil monotonicity rule '{r.monotonicity.value}'.",
+                )
+        if r.min is not None or r.max is not None:
+            var_data = var[:]
+            if r.min is not None:
+                var_data_min = np.min(var_data)
+                ctx.assert_true(
+                    r.min <= var_data_min,
+                    f"Minimum of data is {var_data_min}, minimum allowed value is {r.min}, "
+                )
+            if r.max is not None:
+                var_data_max = np.max(var_data)
+                ctx.assert_true(
+                    r.max >= var_data_max,
+                    f"Maximum of data is {var_data_max}, maximum allowed value is {r.max}, "
                 )
 
         result = ctx.to_result()

@@ -113,6 +113,8 @@ class DataRule(RuleBaseModel):
     byteorder: ByteOrder = ByteOrder.NATIVE
     monotonicity: Monotonicity | None = None
     shape: list[int | Lookup] | None = None
+    min: float | None = None
+    max: float | None = None
 
 
 class ConditionalRule(RuleBaseModel):
