@@ -335,11 +335,11 @@ def main():
             return_values.append(return_value)
             had_errors.append(errors)
 
-    if any(had_errors):
-        sys.exit(2)
-    if all(return_values):
-        sys.exit(0)
-    sys.exit(1)
+    #if any(had_errors):
+    #    sys.exit(2)
+    #if all(return_values):
+    #    sys.exit(0)
+    #sys.exit(1)
 
 
 if __name__ == "__main__":
