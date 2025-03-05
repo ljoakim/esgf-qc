@@ -441,7 +441,7 @@ class RuleBook:
                 return (True, "Exactly one rule is met.")
 
         elif logic == rulebook_model.RuleListLogic.AT_LEAST_ONE:
-            if not any(validations_ok) == 0:
+            if not any(validations_ok):
                 return (False, f"At least one rule must be met. Currently {score} out of {total} are met.")
             else:
                 return (True, "At least one rule is met.")
