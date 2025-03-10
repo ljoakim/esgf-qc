@@ -1,16 +1,16 @@
 import logging
 
 from compliance_checker.base import BaseCheck, BaseNCCheck
-from compliance_checker.rb import rulebook_imp
+from compliance_checker.rulebook import rulebook_imp
 
 logger = logging.getLogger(__name__)
 
 
 class RuleBookCheck(BaseNCCheck, BaseCheck):
     register_checker = True
-    _cc_spec = "rb"
+    _cc_spec = "rulebook"
     _cc_spec_version = "0.1"
-    _cc_description = "Rulebook (RB)"
+    _cc_description = "Rulebook"
     _cc_url = ""
     _cc_display_headers = {3: "Errors", 2: "Warnings", 1: "Info"}
 

@@ -52,7 +52,7 @@ entry-points."compliance_checker.suites"."ioos-0.1" = "compliance_checker.ioos:I
 entry-points."compliance_checker.suites"."ioos-1.1" = "compliance_checker.ioos:IOOS1_1Check"
 entry-points."compliance_checker.suites"."ioos-1.2" = "compliance_checker.ioos:IOOS1_2Check"
 entry-points."compliance_checker.suites"."ioos_sos" = "compliance_checker.ioos:IOOSBaseSOSCheck"
-entry-points."compliance_checker.suites"."rb-0.1" = "compliance_checker.rb.rb:RuleBookCheck"
+entry-points."compliance_checker.suites"."rulebook" = "compliance_checker.rulebook.rulebook:RuleBookCheck"
 
 [tool.setuptools]
 packages = [

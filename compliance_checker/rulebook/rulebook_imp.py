@@ -10,7 +10,7 @@ import yaml
 
 from compliance_checker import cfutil
 from compliance_checker.base import BaseCheck, Result, TestCtx
-from compliance_checker.rb import cmiputil, rulebook_model
+from compliance_checker.rulebook import cmiputil, rulebook_model
 
 
 def result_is_success(result: Result) -> bool:
@@ -93,11 +93,17 @@ class RuleBook:
         #
         if self._rulebook.lookup_table.cmip is not None:
             lookup_table["cmip"] = {}
-            if self._rulebook.lookup_table.cmip.drs:
+            if self._rulebook.lookup_table.cmip.path_drs or self._rulebook.lookup_table.cmip.file_drs:
                 try:
-                    lookup_table["cmip"]["drs"] = cmiputil.extract_drs_elements(pathlib.Path(ds.filepath()), self._rulebook.lookup_table.cmip.drs)
+                    path_elements, file_elements = cmiputil.extract_drs_elements(
+                        pathlib.Path(ds.filepath()),
+                        path_drs=self._rulebook.lookup_table.cmip.path_drs,
+                        file_drs=self._rulebook.lookup_table.cmip.file_drs,
+                    )
+                    lookup_table["cmip"]["path_drs"] = path_elements
+                    lookup_table["cmip"]["file_drs"] = file_elements
                 except Exception as e:
-                    ctx.add_failure(f"While building lookup table (cmip.drs): {e}")
+                    ctx.add_failure(f"While building lookup table (cmip.path_drs, cmip.file_drs): {e}")
             if self._rulebook.lookup_table.cmip.time is not None:
                 lookup_table["cmip"]["time"] = {}
                 try:
@@ -368,16 +374,10 @@ class RuleBook:
             var_data = var[:]
             if r.min is not None:
                 var_data_min = np.min(var_data)
-                ctx.assert_true(
-                    r.min <= var_data_min,
-                    f"Minimum of data is {var_data_min}, minimum allowed value is {r.min}, "
-                )
+                ctx.assert_true(r.min <= var_data_min, f"Minimum of data is {var_data_min}, minimum allowed value is {r.min}, ")
             if r.max is not None:
                 var_data_max = np.max(var_data)
-                ctx.assert_true(
-                    r.max >= var_data_max,
-                    f"Maximum of data is {var_data_max}, maximum allowed value is {r.max}, "
-                )
+                ctx.assert_true(r.max >= var_data_max, f"Maximum of data is {var_data_max}, maximum allowed value is {r.max}, ")
 
         result = ctx.to_result()
         if result_is_success(result):

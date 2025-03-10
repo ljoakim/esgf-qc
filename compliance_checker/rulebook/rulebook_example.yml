@@ -9,7 +9,7 @@
 #
 # To run the rulebook check on a file:
 #
-# $ python -m cchecker -t rb:0.1 -O rb:rulebook:<path_to_rulebook>/rulebook_example.yml <file.nc>
+# $ python -m cchecker -t rulebook:0.1 -O rulebook:rulebook:<path_to_rulebook>/rulebook_example.yml <file.nc>
 #
 ---
 rulebook: "Example rulebook"
@@ -50,8 +50,9 @@ lookup_table:
   #             the file, base on a time range and frequency.
   #
   cmip:
-    drs: "<variable_id>_<domain_id>_<driving_source_id>_<driving_experiment_id>_<driving_variant_label>_<institution_id>_<source_id>_<version_realization>_<frequency>[_<time_range>].nc"
-    time: { range: { lookup: "cmip.drs.time_range" }, frequency: { lookup: "cmip.drs.frequency" }, variable: { lookup: "cf.axis.T" } }
+    path_drs: "<project_id>/<variable_id>"
+    file_drs: "<variable_id>_<domain_id>_<driving_source_id>_<driving_experiment_id>_<driving_variant_label>_<institution_id>_<source_id>_<version_realization>_<frequency>[_<time_range>].nc"
+    time: { range: { lookup: "cmip.file_drs.time_range" }, frequency: { lookup: "cmip.file_drs.frequency" }, variable: { lookup: "cf.axis.T" } }
 
 # Rule sections is a list of rule collections.
 # The sections will be evaluated in turn.
@@ -132,11 +133,11 @@ rule_sections:
       # and the values extracted from the file name using the drs.
       #
       - { attribute: "domain_id", allowed_values: { lookup: "cv.domain_id" } }
-      - { attribute: "domain_id", must_equal: { lookup: "cmip.drs.domain_id" } }
+      - { attribute: "domain_id", must_equal: { lookup: "cmip.file_drs.domain_id" } }
 
       - { attribute: "variable_id", allowed_values: { lookup: "cv.variable_id" } }
-      - { attribute: "variable_id", must_equal: { lookup: "cmip.drs.variable_id" } }
-      - { attribute: "driving_source_id", must_equal: { lookup: "cmip.drs.driving_source_id" } }
+      - { attribute: "variable_id", must_equal: { lookup: "cmip.file_drs.variable_id" } }
+      - { attribute: "driving_source_id", must_equal: { lookup: "cmip.file_drs.driving_source_id" } }
 
   # Example: coordinate system.
   #

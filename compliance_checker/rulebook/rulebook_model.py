@@ -54,7 +54,8 @@ class CMIPTimeLU(pydantic.BaseModel):
 
 
 class CMIPLU(pydantic.BaseModel):
-    drs: str = ""
+    path_drs: str = ""
+    file_drs: str = ""
     time: CMIPTimeLU | None = None
 
 
