@@ -76,16 +76,35 @@ def extract_drs_elements(
 
 
 def convert_time_range_to_datetimes(time_range: str, calendar: str) -> tuple[cftime.datetime, cftime.datetime]:
+    """Convert a CMIP-like time range string to cftime datetime objects.
+
+    Parameters
+    ----------
+    time_range : str
+        Time range string.
+    calendar : str
+        Calendar to use for output cftime datetime objects.
+
+    Returns
+    -------
+    tuple[cftime.datetime, cftime.datetime]
+        Start and end of range.
+
+    Raises
+    ------
+    ValueError
+        If string could not be converted.
+    """
     try:
         start_time_str, end_time_str = time_range.split("-")
     except ValueError as e:
         raise ValueError(f"Time range ('{time_range}') incorrectly formatted.") from e
 
     time_formats = [
-        "%Y%m%d%H%M",
-        "%Y%m%d%H",
-        "%Y%m%d",
         "%Y%m",
+        "%Y%m%d",
+        "%Y%m%d%H",
+        "%Y%m%d%H%M",
     ]
     for time_format in time_formats:
         try:
@@ -98,18 +117,39 @@ def convert_time_range_to_datetimes(time_range: str, calendar: str) -> tuple[cft
 
 
 def time_range_to_expected_point_count(time_range: str, frequency: str, calendar: str) -> int:
+    """Calculate expected number of data points for time range.
+
+
+
+    Parameters
+    ----------
+    time_range : str
+        Time range string.
+    frequency : str
+        Frequency of data points, "mon", "day", "6hr", "3hr" or "1hr".
+    calendar : str
+        Calendar to use for calculation.
+
+    Returns
+    -------
+    int
+        Expected number of data points.
+    """
     start_datetime, end_datetime = convert_time_range_to_datetimes(time_range, calendar)
     if frequency == "mon":
         expected_size = (end_datetime.year - start_datetime.year) * 12 + (end_datetime.month - start_datetime.month) + 1
     else:
         expected_time_range: cftime.timedelta = end_datetime - start_datetime
+        hours = expected_time_range.days * 24 + expected_time_range.seconds // 3600
         if frequency == "day":
             expected_size = expected_time_range.days + 1
         elif frequency == "6hr":
-            expected_size = (expected_time_range.days + 1) * 4
+            expected_size = hours // 6 + 1
         elif frequency == "3hr":
-            expected_size = (expected_time_range.days + 1) * 8
+            expected_size = hours // 3 + 1
         elif frequency == "1hr":
-            expected_size = (expected_time_range.days + 1) * 24
+            expected_size = hours + 1
+        else:
+            raise ValueError(f"Unknown frequency '{frequency}'")
 
     return expected_size
