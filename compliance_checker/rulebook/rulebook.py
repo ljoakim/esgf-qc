@@ -1,7 +1,7 @@
 import logging
 
 from compliance_checker.base import BaseCheck, BaseNCCheck
-from compliance_checker.rulebook import rulebook_imp
+from compliance_checker.rulebook import rulebook_impl
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class RuleBookCheck(BaseNCCheck, BaseCheck):
 
     def check_rulebook_compliance(self, ds):
         try:
-            rulebook = rulebook_imp.RuleBookImpl.from_file(self._rulebook_file)
+            rulebook = rulebook_impl.RuleBookImpl.from_file(self._rulebook_file)
         except (FileNotFoundError, TypeError):
             raise ValueError("A valid RuleBook file must be given as option to the RuleBook checker.") from None
         return rulebook.validate(ds)

@@ -6,27 +6,27 @@ import typing
 import pydantic
 
 
-class RuleListLogic(enum.Enum):
+class ERuleListLogic(enum.Enum):
     ALL = "all"
     EXACTLY_ONE = "exactly one"
     AT_LEAST_ONE = "at least one"
     NONE = "none"
 
 
-class ByteOrder(enum.Enum):
+class EByteOrder(enum.Enum):
     NATIVE = "="
     LITTLE_ENDIAN = "<"
     BIG_ENDIAN = ">"
 
 
-class Monotonicity(enum.Enum):
+class EMonotonicity(enum.Enum):
     INCREASING = "<="
     STRICTLY_INCREASING = "<"
     DECREASING = ">="
     STRICTLY_DECREASING = ">"
 
 
-class CompressionType(enum.Enum):
+class ECompressionType(enum.Enum):
     UNSPECIFIED = "UNSPECIFIED"
     NONE = None
     ZLIB = "zlib"
@@ -36,33 +36,33 @@ class CompressionType(enum.Enum):
     BLOSC = "blosc"
 
 
-class Axis(enum.Enum):
+class EAxis(enum.Enum):
     T = "T"
     Z = "Z"
     Y = "Y"
     X = "X"
 
 
-class CFLU(pydantic.BaseModel):
-    axis: list[Axis] = pydantic.Field(default_factory=list)
+class LUCF(pydantic.BaseModel):
+    axis: list[EAxis] = pydantic.Field(default_factory=list)
 
 
-class CMIPTimeLU(pydantic.BaseModel):
+class LUCMIPTime(pydantic.BaseModel):
     range: str | Lookup
     frequency: str | Lookup
     variable: str | Lookup
 
 
-class CMIPLU(pydantic.BaseModel):
+class LUCMIP(pydantic.BaseModel):
     path_drs: str = ""
     file_drs: str = ""
-    time: CMIPTimeLU | None = None
+    time: LUCMIPTime | None = None
 
 
 class LookupTable(pydantic.BaseModel):
     cv: dict[str, list[str]] | None = None
-    cf: CFLU | None = None
-    cmip: CMIPLU | None = None
+    cf: LUCF | None = None
+    cmip: LUCMIP | None = None
 
 
 class Lookup(pydantic.BaseModel):
@@ -104,15 +104,15 @@ class VariableRule(RuleBaseModel):
     variable: str | Lookup | list[str | Lookup]
     required: bool = True
     dimensions: list[str | Lookup] | None = None
-    compression_type: CompressionType = CompressionType.UNSPECIFIED
+    compression_type: ECompressionType = ECompressionType.UNSPECIFIED
     compression_level: int | None = None
     rules: RuleUnion | RuleUnionList = pydantic.Field(default_factory=list)
 
 
 class DataRule(RuleBaseModel):
     dtype: str
-    byteorder: ByteOrder = ByteOrder.NATIVE
-    monotonicity: Monotonicity | None = None
+    byteorder: EByteOrder = EByteOrder.NATIVE
+    monotonicity: EMonotonicity | None = None
     shape: list[int | Lookup] | None = None
     min: float | None = None
     max: float | None = None
@@ -124,7 +124,7 @@ class ConditionalRule(RuleBaseModel):
 
 
 class RuleListLogicRule(RuleBaseModel):
-    logic: RuleListLogic = RuleListLogic.ALL
+    logic: ERuleListLogic = ERuleListLogic.ALL
     rules: RuleUnion | RuleUnionList
 
 

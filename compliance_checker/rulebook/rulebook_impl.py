@@ -26,7 +26,7 @@ class LookupTableCompiler:
             lut["cv"] = cv
 
     @staticmethod
-    def compile_cf(lut: LookupTableImpl, cf: rulebook_model.CFLU | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
+    def compile_cf(lut: LookupTableImpl, cf: rulebook_model.LUCF | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
         if cf is not None:
             lut["cf"] = {}
             if cf.axis:
@@ -50,7 +50,7 @@ class LookupTableCompiler:
                         raise Exception(f"Failed to get name for '{axis.value}' axis, {e}") from e
 
     @staticmethod
-    def compile_cmip(lut: LookupTableImpl, cmip: rulebook_model.CMIPLU | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
+    def compile_cmip(lut: LookupTableImpl, cmip: rulebook_model.LUCMIP | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
         if cmip is not None:
             lut["cmip"] = {}
             if cmip.path_drs or cmip.file_drs:
@@ -145,7 +145,7 @@ class RuleBookImpl:
         rc: rulebook_model.RuleSection,
     ) -> Result:
         rules_result_list = self._apply_rule_or_rule_list(ds, rc.rules)
-        logic_result, logic_message = self._rule_list_logic(rules_result_list, rulebook_model.RuleListLogic.ALL)
+        logic_result, logic_message = self._rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
         return Result(
             BaseCheck.LOW if logic_result else BaseCheck.HIGH,
             logic_result,
@@ -313,10 +313,10 @@ class RuleBookImpl:
                     f"Variable '{variable_name}' has dimensions {variable.dimensions}, must be {dimensions}.",
                 )
             filters = variable.filters()
-            if r.compression_type != rulebook_model.CompressionType.UNSPECIFIED:
-                var_compression_type = rulebook_model.CompressionType.NONE
-                for t in rulebook_model.CompressionType:
-                    if t not in [rulebook_model.CompressionType.UNSPECIFIED, rulebook_model.CompressionType.NONE] and filters[t.value]:
+            if r.compression_type != rulebook_model.ECompressionType.UNSPECIFIED:
+                var_compression_type = rulebook_model.ECompressionType.NONE
+                for t in rulebook_model.ECompressionType:
+                    if t not in [rulebook_model.ECompressionType.UNSPECIFIED, rulebook_model.ECompressionType.NONE] and filters[t.value]:
                         var_compression_type = t.value
                         break
                 ctx.assert_true(
@@ -332,7 +332,7 @@ class RuleBookImpl:
             rules = r.rules if isinstance(r.rules, list) else [r.rules]
             if len(rules) > 0:
                 rules_result_list = self._apply_rule_or_rule_list(variable, rules)
-                logic_result, logic_message = self._rule_list_logic(rules_result_list, rulebook_model.RuleListLogic.ALL)
+                logic_result, logic_message = self._rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
                 ctx.assert_true(logic_result, logic_message)
 
         result = ctx.to_result()
@@ -368,10 +368,10 @@ class RuleBookImpl:
                 ctx.add_failure(f"Data has shape '{var.shape}' but must be one-dimensional to determine monotonicity.")
             else:
                 operator = {
-                    rulebook_model.Monotonicity.INCREASING: np.less_equal,
-                    rulebook_model.Monotonicity.STRICTLY_INCREASING: np.less,
-                    rulebook_model.Monotonicity.DECREASING: np.greater_equal,
-                    rulebook_model.Monotonicity.STRICTLY_DECREASING: np.greater,
+                    rulebook_model.EMonotonicity.INCREASING: np.less_equal,
+                    rulebook_model.EMonotonicity.STRICTLY_INCREASING: np.less,
+                    rulebook_model.EMonotonicity.DECREASING: np.greater_equal,
+                    rulebook_model.EMonotonicity.STRICTLY_DECREASING: np.greater,
                 }
                 var_data = var[:]
                 ctx.assert_true(
@@ -401,10 +401,10 @@ class RuleBookImpl:
         dependent_result_list = []
 
         condition_result_list = self._apply_rule_or_rule_list(ds, r.condition)
-        logic_result, _ = self._rule_list_logic(condition_result_list, rulebook_model.RuleListLogic.ALL)
+        logic_result, _ = self._rule_list_logic(condition_result_list, rulebook_model.ERuleListLogic.ALL)
         if logic_result:
             dependent_result_list = self._apply_rule_or_rule_list(ds, r.dependent)
-            logic_result, logic_message = self._rule_list_logic(dependent_result_list, rulebook_model.RuleListLogic.ALL)
+            logic_result, logic_message = self._rule_list_logic(dependent_result_list, rulebook_model.ERuleListLogic.ALL)
             ctx.assert_true(logic_result, "Checking dependent rules: " + logic_message)
 
         result = ctx.to_result()
@@ -431,24 +431,24 @@ class RuleBookImpl:
     def _rule_list_logic(
         self,
         validation_nodes: list[Result],
-        logic: rulebook_model.RuleListLogic,
+        logic: rulebook_model.ERuleListLogic,
     ) -> tuple[bool, str]:
         validations_ok = [node.value[0] == node.value[1] for node in validation_nodes]
         score = sum(validations_ok)
         total = len(validations_ok)
-        if logic == rulebook_model.RuleListLogic.ALL:
+        if logic == rulebook_model.ERuleListLogic.ALL:
             if not all(validations_ok):
                 return (False, f"All rules must be met. Currently {score} out of {total} are met.")
             else:
                 return (True, "All rules are met.")
 
-        elif logic == rulebook_model.RuleListLogic.EXACTLY_ONE:
+        elif logic == rulebook_model.ERuleListLogic.EXACTLY_ONE:
             if sum(validations_ok) != 1:
                 return (False, f"Exactly one (one and only one) rule must be met. Currently {score} out of {total} are met.")
             else:
                 return (True, "Exactly one rule is met.")
 
-        elif logic == rulebook_model.RuleListLogic.AT_LEAST_ONE:
+        elif logic == rulebook_model.ERuleListLogic.AT_LEAST_ONE:
             if not any(validations_ok):
                 return (False, f"At least one rule must be met. Currently {score} out of {total} are met.")
             else:
