@@ -10,7 +10,7 @@ class RuleBookCheck(BaseNCCheck, BaseCheck):
     register_checker = True
     _cc_spec = "rulebook"
     _cc_spec_version = "0.1"
-    _cc_description = "Rulebook"
+    _cc_description = "RuleBook"
     _cc_url = ""
     _cc_display_headers = {3: "Errors", 2: "Warnings", 1: "Info"}
 
@@ -20,7 +20,7 @@ class RuleBookCheck(BaseNCCheck, BaseCheck):
 
     def check_rulebook_compliance(self, ds):
         try:
-            rulebook = rulebook_imp.RuleBook.from_file(self._rulebook_file)
+            rulebook = rulebook_imp.RuleBookImpl.from_file(self._rulebook_file)
         except (FileNotFoundError, TypeError):
             raise ValueError("A valid RuleBook file must be given as option to the RuleBook checker.") from None
         return rulebook.validate(ds)

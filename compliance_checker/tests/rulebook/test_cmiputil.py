@@ -1,6 +1,5 @@
-import pytest
-
 import cftime
+import pytest
 
 import compliance_checker.rulebook.cmiputil
 

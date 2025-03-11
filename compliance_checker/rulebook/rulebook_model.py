@@ -136,7 +136,6 @@ class RuleSection(pydantic.BaseModel):
 
 class RuleBookModel(pydantic.BaseModel):
     rulebook: str
-    version: str = pydantic.Field(pattern=r"^([0-9]+)$")
     lookup_table: LookupTable | None = None
     rule_sections: list[RuleSection] | None = None
 

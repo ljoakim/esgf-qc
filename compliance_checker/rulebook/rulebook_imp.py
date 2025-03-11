@@ -19,23 +19,106 @@ def result_is_success(result: Result) -> bool:
     return result.value
 
 
-class RuleBook:
-    def __init__(self, rulebook: str) -> None:
-        self._rulebook = rulebook_model.RuleBookModel.model_validate(rulebook)
-        self._lookup_table = {}
+class LookupTableCompiler:
+    @staticmethod
+    def compile_cv(lut: LookupTableImpl, cv: dict[str, list[str]] | None) -> dict[str, list[str]]:
+        if cv is not None:
+            lut["cv"] = cv
 
     @staticmethod
-    def from_file(rulebook_file: pathlib.Path | str) -> RuleBook:
+    def compile_cf(lut: LookupTableImpl, cf: rulebook_model.CFLU | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
+        if cf is not None:
+            lut["cf"] = {}
+            if cf.axis:
+                lut["cf"]["axis"] = {}
+                # Axis names.
+                # TODO: This may need to be made more robust.
+                #       It relies on coordinate variables having the 'axis'
+                #       attribute, which formally is not a 'must'.
+                #
+                axis_variables = cfutil.get_axis_variables(ds)
+                axis_method_mapping = {
+                    "T": cfutil.get_time_variables,
+                    "Z": cfutil.get_z_variables,
+                    "Y": cfutil.get_latitude_variables,
+                    "X": cfutil.get_longitude_variables,
+                }
+                for axis in cf.axis:
+                    try:
+                        lut["cf"]["axis"][axis.value] = set(axis_method_mapping[axis.value](ds)).intersection(axis_variables).pop()
+                    except Exception as e:
+                        raise Exception(f"Failed to get name for '{axis.value}' axis, {e}") from e
+
+    @staticmethod
+    def compile_cmip(lut: LookupTableImpl, cmip: rulebook_model.CMIPLU | None, ds: netCDF4.Dataset) -> dict[str, typing.Any]:
+        if cmip is not None:
+            lut["cmip"] = {}
+            if cmip.path_drs or cmip.file_drs:
+                try:
+                    path_elements, file_elements = cmiputil.extract_drs_elements(
+                        pathlib.Path(ds.filepath()),
+                        path_drs=cmip.path_drs,
+                        file_drs=cmip.file_drs,
+                    )
+                    lut["cmip"]["path_drs"] = path_elements
+                    lut["cmip"]["file_drs"] = file_elements
+                except Exception as e:
+                    raise Exception(f"Failed to extract DRS elements, {e}") from e
+            if cmip.time is not None:
+                lut["cmip"]["time"] = {}
+                try:
+                    var = ds.variables[lut.lookup(cmip.time.variable)]
+                    lut["cmip"]["time"]["count"] = cmiputil.time_range_to_expected_point_count(
+                        lut.lookup(cmip.time.range),
+                        lut.lookup(cmip.time.frequency),
+                        var.calendar,
+                    )
+                except Exception as e:
+                    raise Exception(f"Failed to calculate expected data points along time dimension: {e}") from e
+
+
+class LookupTableImpl(dict):
+
+    def lookup(self, key: str | rulebook_model.Lookup) -> typing.Any:
+        if isinstance(key, rulebook_model.Lookup):
+            try:
+                keys = key.lookup.split(".")
+                value = self
+                for k in keys:
+                    value = value[k]
+                return value
+            except Exception as e:
+                raise KeyError(f"Lookup failed for '{key.lookup}', {e}") from e
+        else:
+            return key
+
+
+class RuleBookImpl:
+    def __init__(self, rulebook: dict[str, typing.Any]) -> None:
+        self._rulebook = rulebook_model.RuleBookModel.model_validate(rulebook)
+        self._lut = {}
+
+    @staticmethod
+    def from_str(rulebook_str: str) -> RuleBookImpl:
+        rulebook_dict = yaml.safe_load(rulebook_str)
+        return RuleBookImpl(rulebook_dict)
+
+    @staticmethod
+    def from_file(rulebook_file: pathlib.Path | str) -> RuleBookImpl:
         with open(rulebook_file) as f:
-            rulebook_str = yaml.safe_load(f)
-            return RuleBook(rulebook_str)
+            return RuleBookImpl.from_str(f.read())
 
     def validate(self, ds: netCDF4.Dataset) -> list[Result]:
-        results = []
         if self._rulebook.lookup_table:
-            self._lookup_table, result = self._rebuild_lookup_table(ds)
-            if not result_is_success(result):
-                return [result]
+            self._lut = LookupTableImpl()
+            try:
+                LookupTableCompiler.compile_cv(self._lut, self._rulebook.lookup_table.cv)
+                LookupTableCompiler.compile_cf(self._lut, self._rulebook.lookup_table.cf, ds)
+                LookupTableCompiler.compile_cmip(self._lut, self._rulebook.lookup_table.cmip, ds)
+            except Exception as e:
+                return [Result(BaseCheck.HIGH, False, msgs=[f"While building lookup table (cf): {e}"])]
+
+        results = []
         for rule_section in self._rulebook.rule_sections:
             result = self._apply_rule_section(ds, rule_section)
             result.msgs = [self._flatten_result_tree(result)]  # Assign single hierarchical error message
@@ -55,81 +138,6 @@ class RuleBook:
             for child in result.children:
                 level_msg = level_msg + self._flatten_result_tree(child, indent + 1)
         return level_msg
-
-    def _rebuild_lookup_table(self, ds: netCDF4.Dataset) -> tuple[dict[str, typing.Any], Result]:
-        ctx = TestCtx(BaseCheck.HIGH, "Building lookup table")
-        lookup_table = {}
-
-        # CV table
-        #
-        if self._rulebook.lookup_table.cv is not None:
-            lookup_table["cv"] = self._rulebook.lookup_table.cv
-
-        # CF table
-        #
-        if self._rulebook.lookup_table.cf is not None:
-            lookup_table["cf"] = {}
-            if self._rulebook.lookup_table.cf.axis:
-                # Axis names.
-                # TODO: This probably needs to be made more robust.
-                #       It relies on coordinate variables having the 'axis' attribute,
-                #       which formally is not a 'must'.
-                #
-                lookup_table["cf"]["axis"] = {}
-                axis_variables = cfutil.get_axis_variables(ds)
-                axis_method_mapping = {
-                    "T": cfutil.get_time_variables,
-                    "Z": cfutil.get_z_variables,
-                    "Y": cfutil.get_latitude_variables,
-                    "X": cfutil.get_longitude_variables,
-                }
-                for axis in self._rulebook.lookup_table.cf.axis:
-                    try:
-                        lookup_table["cf"]["axis"][axis.value] = set(axis_method_mapping[axis.value](ds)).intersection(axis_variables).pop()
-                    except Exception:
-                        ctx.add_failure(f"While building lookup table (cf.axis): Failed to get name for '{axis.value}' axis.")
-
-        # CMIP table
-        #
-        if self._rulebook.lookup_table.cmip is not None:
-            lookup_table["cmip"] = {}
-            if self._rulebook.lookup_table.cmip.path_drs or self._rulebook.lookup_table.cmip.file_drs:
-                try:
-                    path_elements, file_elements = cmiputil.extract_drs_elements(
-                        pathlib.Path(ds.filepath()),
-                        path_drs=self._rulebook.lookup_table.cmip.path_drs,
-                        file_drs=self._rulebook.lookup_table.cmip.file_drs,
-                    )
-                    lookup_table["cmip"]["path_drs"] = path_elements
-                    lookup_table["cmip"]["file_drs"] = file_elements
-                except Exception as e:
-                    ctx.add_failure(f"While building lookup table (cmip.path_drs, cmip.file_drs): {e}")
-            if self._rulebook.lookup_table.cmip.time is not None:
-                lookup_table["cmip"]["time"] = {}
-                try:
-                    var = ds.variables[self._lookup(self._rulebook.lookup_table.cmip.time.variable, lookup_table)]
-                    lookup_table["cmip"]["time"]["count"] = cmiputil.time_range_to_expected_point_count(
-                        self._lookup(self._rulebook.lookup_table.cmip.time.range, lookup_table),
-                        self._lookup(self._rulebook.lookup_table.cmip.time.frequency, lookup_table),
-                        var.calendar,
-                    )
-                except Exception as e:
-                    ctx.add_failure(f"While building lookup table (cmip.time): {e}")
-
-        return lookup_table, ctx.to_result()
-
-    def _lookup(self, key: typing.Any, table: dict[str, typing.Any] | None = None) -> typing.Any:
-        if isinstance(key, rulebook_model.Lookup):
-            try:
-                keys = key.lookup.split(".")
-                value = self._lookup_table if table is None else table
-                for k in keys:
-                    value = value[k]
-                return value
-            except (AttributeError, KeyError):
-                return key
-        else:
-            return key
 
     def _apply_rule_section(
         self,
@@ -189,7 +197,7 @@ class RuleBook:
         ds: netCDF4.Dataset,
         r: rulebook_model.DimensionRule,
     ) -> list[Result]:
-        dimension_name = self._lookup(r.dimension)
+        dimension_name = self._lut.lookup(r.dimension)
         if isinstance(dimension_name, list):
             rules = [r.model_copy(update={"dimension": d}) for d in dimension_name]
         else:
@@ -201,7 +209,7 @@ class RuleBook:
         ds: netCDF4.Dataset,
         r: rulebook_model.DimensionRule,
     ) -> Result:
-        dimension_name = self._lookup(r.dimension)
+        dimension_name = self._lut.lookup(r.dimension)
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
         try:
             dimension = ds.dimensions[dimension_name]
@@ -225,7 +233,7 @@ class RuleBook:
         ds: netCDF4.Dataset | netCDF4.Variable,
         r: rulebook_model.AttributeRule,
     ) -> list[Result]:
-        attribute_name = self._lookup(r.attribute)
+        attribute_name = self._lut.lookup(r.attribute)
         if isinstance(attribute_name, list):
             rules = [r.model_copy(update={"attribute": v}) for v in attribute_name]
         else:
@@ -237,10 +245,10 @@ class RuleBook:
         ds: netCDF4.Dataset | netCDF4.Variable,
         r: rulebook_model.AttributeRule,
     ) -> Result:
-        attribute_name = self._lookup(r.attribute)
+        attribute_name = self._lut.lookup(r.attribute)
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
         try:
-            value = self._lookup(ds.getncattr(attribute_name))
+            value = self._lut.lookup(ds.getncattr(attribute_name))
         except AttributeError:
             ctx.assert_true(
                 not r.required,
@@ -248,19 +256,19 @@ class RuleBook:
             )
         else:
             if r.must_equal is not None:
-                must_equal = self._lookup(r.must_equal)
+                must_equal = self._lut.lookup(r.must_equal)
                 ctx.assert_true(
                     self._equal_or_equal_to_precision(value, must_equal),
                     f"Attribute '{attribute_name}' has value '{value}' but must equal '{must_equal}'.",
                 )
             elif r.allowed_values is not None:
-                allowed_values = [self._lookup(v) for v in self._lookup(r.allowed_values)]
+                allowed_values = [self._lut.lookup(v) for v in self._lut.lookup(r.allowed_values)]
                 ctx.assert_true(
                     value in allowed_values,
                     f"Attribute '{attribute_name}' has value '{value}' but must be one of {allowed_values}.",
                 )
             elif r.pattern is not None:
-                pattern = self._lookup(r.pattern)
+                pattern = self._lut.lookup(r.pattern)
                 ctx.assert_true(
                     re.search(pattern, value),
                     f"Attribute '{attribute_name}' has value '{value}' which does not match the pattern '{pattern}'.",
@@ -275,7 +283,7 @@ class RuleBook:
         var: netCDF4.Variable,
         r: rulebook_model.VariableRule,
     ) -> list[Result]:
-        variable_name = self._lookup(r.variable)
+        variable_name = self._lut.lookup(r.variable)
         if isinstance(variable_name, list):
             rules = [r.model_copy(update={"variable": v}) for v in variable_name]
         else:
@@ -287,7 +295,7 @@ class RuleBook:
         var: netCDF4.Variable,
         r: rulebook_model.VariableRule,
     ) -> Result:
-        variable_name = self._lookup(r.variable)
+        variable_name = self._lut.lookup(r.variable)
         ctx = TestCtx(BaseCheck.HIGH, variable=variable_name, messages=[r.description] if r.description else None)
         rules_result_list = []
         try:
@@ -299,7 +307,7 @@ class RuleBook:
             )
         else:
             if r.dimensions is not None:
-                dimensions = tuple([self._lookup(d) for d in r.dimensions])
+                dimensions = tuple([self._lut.lookup(d) for d in r.dimensions])
                 ctx.assert_true(
                     variable.dimensions == dimensions,
                     f"Variable '{variable_name}' has dimensions {variable.dimensions}, must be {dimensions}.",
@@ -350,7 +358,7 @@ class RuleBook:
             f"Data has byteorder '{var.dtype.byteorder}' but must be '{r.byteorder.value}' ({r.byteorder}).",
         )
         if r.shape is not None:
-            shape = tuple([int(self._lookup(s)) for s in r.shape])
+            shape = tuple([int(self._lut.lookup(s)) for s in r.shape])
             ctx.assert_true(
                 var.shape == shape,
                 f"Data has shape '{var.shape}' but must be '{shape}'.",
@@ -381,7 +389,7 @@ class RuleBook:
 
         result = ctx.to_result()
         if result_is_success(result):
-            result.msgs.append(f"Data of variable '{self._lookup(var.name)}' meets specified rules.")
+            result.msgs.append(f"Data of variable '{self._lut.lookup(var.name)}' meets specified rules.")
         return result
 
     def _apply_conditional_rule(

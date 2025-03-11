@@ -13,7 +13,6 @@
 #
 ---
 rulebook: "Example rulebook"
-version: "1"
 
 # The lookup table has subsections, which define values that can
 # be used by rules in the rule section below. Some subsections are
@@ -44,7 +43,9 @@ lookup_table:
 
   # "cmip" subsection describes how to fetch values that are related
   # to cmip-like standards:
-  #   - "drs":  a string drs that defines the filename structure of a
+  #   - "path_drs":  a string drs that defines the folder structure of a
+  #             path. Values will be extracted using this string.
+  #   - "file_drs":  a string drs that defines the filename structure of a
   #             file name. Values will be extracted using this string.
   #   - "time": precomputes the number of expected time points in
   #             the file, base on a time range and frequency.
