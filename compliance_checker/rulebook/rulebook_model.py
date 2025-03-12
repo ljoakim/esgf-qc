@@ -27,7 +27,7 @@ class EMonotonicity(enum.Enum):
 
 
 class ECompressionType(enum.Enum):
-    UNSPECIFIED = "UNSPECIFIED"
+    ANY = "ANY"
     NONE = None
     ZLIB = "zlib"
     SZIP = "szip"
@@ -104,7 +104,7 @@ class VariableRule(RuleBaseModel):
     variable: str | Lookup | list[str | Lookup]
     required: bool = True
     dimensions: list[str | Lookup] | None = None
-    compression_type: ECompressionType = ECompressionType.UNSPECIFIED
+    compression_type: ECompressionType = ECompressionType.ANY
     compression_level: int | None = None
     rules: RuleUnion | RuleUnionList = pydantic.Field(default_factory=list)
 
@@ -119,8 +119,8 @@ class DataRule(RuleBaseModel):
 
 
 class ConditionalRule(RuleBaseModel):
-    condition: RuleUnion | RuleUnionList = pydantic.Field(..., alias="if")
-    dependent: RuleUnion | RuleUnionList = pydantic.Field(..., alias="then")
+    condition: RuleUnion | RuleUnionList = pydantic.Field(..., validation_alias=pydantic.AliasChoices("condition", "if"))
+    dependent: RuleUnion | RuleUnionList = pydantic.Field(..., validation_alias=pydantic.AliasChoices("dependent", "then"))
 
 
 class RuleListLogicRule(RuleBaseModel):

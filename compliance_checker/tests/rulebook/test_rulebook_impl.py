@@ -1,6 +1,7 @@
 import netCDF4
 import pytest
 
+from compliance_checker.base import Result
 from compliance_checker.rulebook import rulebook_impl, rulebook_model
 
 
@@ -264,6 +265,40 @@ TEST_RULE_VALIDATOR_VALIDATE_VARIABLE = {
     "variable_rule_existance_expand_success": (rulebook_model.VariableRule(variable=["lat", "lon"]), True),
     "variable_rule_existance_expand_fail": (rulebook_model.VariableRule(variable=["lat", "novar"]), False),
     "variable_rule_not_required": (rulebook_model.VariableRule(variable="novar", required=False), True),
+    "variable_rule_dimensions_success": (rulebook_model.VariableRule(variable="pr", dimensions=["time", "lat", "lon"]), True),
+    "variable_rule_dimensions_fail": (rulebook_model.VariableRule(variable="pr", dimensions=["time", "lon", "lat"]), False),
+    "variable_rule_compression_type_success": (rulebook_model.VariableRule(variable="pr", compression_type=rulebook_model.ECompressionType.ZLIB), True),
+    "variable_rule_compression_type_fail": (rulebook_model.VariableRule(variable="pr", compression_type=rulebook_model.ECompressionType.NONE), False),
+    "variable_rule_compression_level_success": (rulebook_model.VariableRule(variable="pr", compression_level=1), True),
+    "variable_rule_compression_level_fail": (rulebook_model.VariableRule(variable="pr", compression_level=0), False),
+    "variable_rule_with_single_rule_success": (
+        rulebook_model.VariableRule(variable="time", rules=rulebook_model.AttributeRule(attribute="standard_name", must_equal="time")),
+        True,
+    ),
+    "variable_rule_with_single_rule_fail": (
+        rulebook_model.VariableRule(variable="time", rules=rulebook_model.AttributeRule(attribute="standard_name", must_equal="incorrect")),
+        False,
+    ),
+    "variable_rule_with_multiple_rules_success": (
+        rulebook_model.VariableRule(
+            variable="pr",
+            rules=[
+                rulebook_model.AttributeRule(attribute="standard_name", must_equal="precipitation_flux"),
+                rulebook_model.DataRule(dtype="float32"),
+            ],
+        ),
+        True,
+    ),
+    "variable_rule_with_multiple_rules_fail": (
+        rulebook_model.VariableRule(
+            variable="pr",
+            rules=[
+                rulebook_model.AttributeRule(attribute="standard_name", must_equal="precipitation_flux"),
+                rulebook_model.DataRule(dtype="float64"),
+            ],
+        ),
+        False,
+    ),
 }
 
 
@@ -276,3 +311,244 @@ def test_rule_validator_validate_variable(nc_test_file, variable_rule, expected)
     results = rulebook_impl.RuleValidator.validate_variable(netCDF4.Dataset(nc_test_file), variable_rule, rulebook_impl.LookupTableImpl())
     check, msgs = _check_all_results(results)
     assert check == expected, msgs
+
+
+TEST_RULE_VALIDATOR_VALIDATE_DATA = {
+    "data_rule_type_success": ("pr", rulebook_model.DataRule(dtype="float32"), True),
+    "data_rule_type_fail": ("pr", rulebook_model.DataRule(dtype="float64"), False),
+    "data_rule_byteorder_success": ("pr", rulebook_model.DataRule(dtype="float32", byteorder="="), True),
+    "data_rule_byteorder_fail": ("pr", rulebook_model.DataRule(dtype="float32", byteorder=">"), False),
+    "data_rule_monotonicity_success": ("time", rulebook_model.DataRule(dtype="float64", monotonicity="<"), True),
+    "data_rule_monotonicity_fail": ("time", rulebook_model.DataRule(dtype="float64", monotonicity=">"), False),
+    "data_rule_shape_success": ("pr", rulebook_model.DataRule(dtype="float32", shape=[2, 2, 2]), True),
+    "data_rule_shape_fail": ("pr", rulebook_model.DataRule(dtype="float32", shape=[2, 2]), False),
+    "data_rule_max_success": ("pr", rulebook_model.DataRule(dtype="float32", max=8.0), True),
+    "data_rule_max_fail": ("pr", rulebook_model.DataRule(dtype="float32", max=4.0), False),
+    "data_rule_min_success": ("pr", rulebook_model.DataRule(dtype="float32", min=1.0), True),
+    "data_rule_min_fail": ("pr", rulebook_model.DataRule(dtype="float32", min=4.0), False),
+}
+
+
+@pytest.mark.parametrize(
+    "variable,data_rule,expected",
+    TEST_RULE_VALIDATOR_VALIDATE_DATA.values(),
+    ids=TEST_RULE_VALIDATOR_VALIDATE_DATA.keys(),
+)
+def test_rule_validator_validate_data(nc_test_file, variable, data_rule, expected):
+    ds = netCDF4.Dataset(nc_test_file)
+    var = ds.variables[variable]
+    results = rulebook_impl.RuleValidator.validate_variable_data(var, data_rule, rulebook_impl.LookupTableImpl())
+    check, msgs = _check_all_results(results)
+    assert check == expected, msgs
+
+
+TEST_RULE_VALIDATOR_VALIDATE_CONDITIONAL = {
+    "conditional_rule_single_rule_success": (
+        rulebook_model.ConditionalRule(
+            condition=rulebook_model.AttributeRule(attribute="domain_id"),
+            dependent=rulebook_model.VariableRule(variable="lat"),
+        ),
+        True,
+    ),
+    "conditional_rule_multiple_rules_success": (
+        rulebook_model.ConditionalRule(
+            condition=[
+                rulebook_model.AttributeRule(attribute=["domain_id", "variable_id"]),
+                rulebook_model.DimensionRule(dimension="lat"),
+            ],
+            dependent=[
+                rulebook_model.VariableRule(variable="lat"),
+                rulebook_model.FileFormatRule(data_model="NETCDF4_CLASSIC"),
+            ],
+        ),
+        True,
+    ),
+    "conditional_rule_condition_not_fulfilled_success": (
+        rulebook_model.ConditionalRule(
+            condition=rulebook_model.AttributeRule(attribute="noattr"),
+            dependent=rulebook_model.VariableRule(variable="novar"),
+        ),
+        True,
+    ),
+    "conditional_rule_dependent_not_fulfilled_fail": (
+        rulebook_model.ConditionalRule(
+            condition=rulebook_model.AttributeRule(attribute="domain_id"),
+            dependent=rulebook_model.VariableRule(variable="novar"),
+        ),
+        False,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "conditional_rule,expected",
+    TEST_RULE_VALIDATOR_VALIDATE_CONDITIONAL.values(),
+    ids=TEST_RULE_VALIDATOR_VALIDATE_CONDITIONAL.keys(),
+)
+def test_rule_validator_validate_conditional(nc_test_file, conditional_rule, expected):
+    results = rulebook_impl.RuleValidator.validate_conditional(netCDF4.Dataset(nc_test_file), conditional_rule, rulebook_impl.LookupTableImpl())
+    check, msgs = _check_all_results(results)
+    assert check == expected, msgs
+
+
+TEST_RULE_VALIDATOR_VALIDATE_RULE_LIST_LOGIC = {
+    "rule_list_logic_rule_single_rule_success": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.ALL,
+            rules=rulebook_model.AttributeRule(attribute="domain_id"),
+        ),
+        True,
+    ),
+    "rule_list_logic_rule_single_rule_fail": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.ALL,
+            rules=rulebook_model.AttributeRule(attribute="noattr"),
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_all_with_all": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.ALL,
+            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        True,
+    ),
+    "rule_list_logic_rule_one_with_all": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.ALL,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_none_with_all": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.ALL,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_all_with_exactly_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_one_with_exactly_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        True,
+    ),
+    "rule_list_logic_rule_none_with_exactly_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_all_with_at_least_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        True,
+    ),
+    "rule_list_logic_rule_one_with_at_least_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        True,
+    ),
+    "rule_list_logic_rule_none_with_at_least_one": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_all_with_none": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.NONE,
+            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_one_with_none": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.NONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
+        ),
+        False,
+    ),
+    "rule_list_logic_rule_none_with_none": (
+        rulebook_model.RuleListLogicRule(
+            logic=rulebook_model.ERuleListLogic.NONE,
+            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
+        ),
+        True,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "rule_list_logic_rule,expected",
+    TEST_RULE_VALIDATOR_VALIDATE_RULE_LIST_LOGIC.values(),
+    ids=TEST_RULE_VALIDATOR_VALIDATE_RULE_LIST_LOGIC.keys(),
+)
+def test_rule_validator_validate_rule_list_logic(nc_test_file, rule_list_logic_rule, expected):
+    results = rulebook_impl.RuleValidator.validate_rule_list_logic(netCDF4.Dataset(nc_test_file), rule_list_logic_rule, rulebook_impl.LookupTableImpl())
+    check, msgs = _check_all_results(results)
+    assert check == expected, msgs
+
+
+TEST_RULE_VALIDATOR_EXPAND_RULE = {
+    "expand_rule_single_rule": (
+        "dimension",
+        rulebook_model.DimensionRule(dimension="time"),
+        [rulebook_model.DimensionRule(dimension="time")],
+    ),
+    "expand_rule_multiple_rules": (
+        "dimension",
+        rulebook_model.DimensionRule(dimension=["time", "lat", "lon"]),
+        [rulebook_model.DimensionRule(dimension="time"), rulebook_model.DimensionRule(dimension="lat"), rulebook_model.DimensionRule(dimension="lon")],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "expanding_field_name,rule,expected",
+    TEST_RULE_VALIDATOR_EXPAND_RULE.values(),
+    ids=TEST_RULE_VALIDATOR_EXPAND_RULE.keys(),
+)
+def test_rule_validator_expand_rule(expanding_field_name, rule, expected):
+    result = rulebook_impl.RuleValidator.expand_rule(expanding_field_name, rule, rulebook_impl.LookupTableImpl())
+    assert result == expected
+
+
+TEST_RULE_VALIDATOR_EVALUATE_RESULT_LIST_LOGIC = {
+    "result_list_logic_all_with_all": ([Result(value=True), Result(value=True)], rulebook_model.ERuleListLogic.ALL, True),
+    "result_list_logic_one_with_all": ([Result(value=True), Result(value=False)], rulebook_model.ERuleListLogic.ALL, False),
+    "result_list_logic_none_with_all": ([Result(value=False), Result(value=False)], rulebook_model.ERuleListLogic.ALL, False),
+    "result_list_logic_all_with_exactly_one": ([Result(value=True), Result(value=True)], rulebook_model.ERuleListLogic.EXACTLY_ONE, False),
+    "result_list_logic_one_with_exactly_one": ([Result(value=True), Result(value=False)], rulebook_model.ERuleListLogic.EXACTLY_ONE, True),
+    "result_list_logic_none_with_exactly_one": ([Result(value=False), Result(value=False)], rulebook_model.ERuleListLogic.EXACTLY_ONE, False),
+    "result_list_logic_all_with_at_least_one": ([Result(value=True), Result(value=True)], rulebook_model.ERuleListLogic.AT_LEAST_ONE, True),
+    "result_list_logic_one_with_at_least_one": ([Result(value=True), Result(value=False)], rulebook_model.ERuleListLogic.AT_LEAST_ONE, True),
+    "result_list_logic_none_with_at_least_one": ([Result(value=False), Result(value=False)], rulebook_model.ERuleListLogic.AT_LEAST_ONE, False),
+    "result_list_logic_all_with_none": ([Result(value=True), Result(value=True)], rulebook_model.ERuleListLogic.NONE, False),
+    "result_list_logic_one_with_none": ([Result(value=True), Result(value=False)], rulebook_model.ERuleListLogic.NONE, False),
+    "result_list_logic_none_with_none": ([Result(value=False), Result(value=False)], rulebook_model.ERuleListLogic.NONE, True),
+}
+
+
+@pytest.mark.parametrize(
+    "result_list,logic,expected",
+    TEST_RULE_VALIDATOR_EVALUATE_RESULT_LIST_LOGIC.values(),
+    ids=TEST_RULE_VALIDATOR_EVALUATE_RESULT_LIST_LOGIC.keys(),
+)
+def test_rule_validator_evaluate_result_list_logic(result_list, logic, expected):
+    result, msg = rulebook_impl.RuleValidator.evaluate_result_list_logic(result_list, logic)
+    assert result == expected, msg

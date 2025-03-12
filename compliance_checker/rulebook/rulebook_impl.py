@@ -112,7 +112,7 @@ class RuleValidator:
         lut: LookupTableImpl,
     ) -> list[Result]:
         rules_result_list = RuleValidator.validate_rule_or_rule_list(ds, rc.rules, lut)
-        logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
+        logic_result, logic_message = RuleValidator.evaluate_result_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
         return [
             Result(
                 BaseCheck.LOW if logic_result else BaseCheck.HIGH,
@@ -262,10 +262,10 @@ class RuleValidator:
                         f"Variable '{variable_name}' has dimensions {variable.dimensions}, must be {dimensions}.",
                     )
                 filters = variable.filters()
-                if rule.compression_type != rulebook_model.ECompressionType.UNSPECIFIED:
-                    var_compression_type = rulebook_model.ECompressionType.NONE
+                if rule.compression_type != rulebook_model.ECompressionType.ANY:
+                    var_compression_type = rulebook_model.ECompressionType.NONE.value
                     for t in rulebook_model.ECompressionType:
-                        if t not in [rulebook_model.ECompressionType.UNSPECIFIED, rulebook_model.ECompressionType.NONE] and filters[t.value]:
+                        if t not in [rulebook_model.ECompressionType.ANY, rulebook_model.ECompressionType.NONE] and filters[t.value]:
                             var_compression_type = t.value
                             break
                     ctx.assert_true(
@@ -281,7 +281,7 @@ class RuleValidator:
                 variable_rules = rule.rules if isinstance(rule.rules, list) else [rule.rules]
                 if len(variable_rules) > 0:
                     rules_result_list = RuleValidator.validate_rule_or_rule_list(variable, variable_rules, lut)
-                    logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
+                    logic_result, logic_message = RuleValidator.evaluate_result_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
                     ctx.assert_true(logic_result, logic_message)
 
             result = ctx.to_result()
@@ -353,10 +353,10 @@ class RuleValidator:
         dependent_result_list = []
 
         condition_result_list = RuleValidator.validate_rule_or_rule_list(ds, r.condition, lut)
-        logic_result, _ = RuleValidator.apply_rule_list_logic(condition_result_list, rulebook_model.ERuleListLogic.ALL)
+        logic_result, _ = RuleValidator.evaluate_result_list_logic(condition_result_list, rulebook_model.ERuleListLogic.ALL)
         if logic_result:
             dependent_result_list = RuleValidator.validate_rule_or_rule_list(ds, r.dependent, lut)
-            logic_result, logic_message = RuleValidator.apply_rule_list_logic(dependent_result_list, rulebook_model.ERuleListLogic.ALL)
+            logic_result, logic_message = RuleValidator.evaluate_result_list_logic(dependent_result_list, rulebook_model.ERuleListLogic.ALL)
             ctx.assert_true(logic_result, "Checking dependent rules: " + logic_message)
 
         result = ctx.to_result()
@@ -374,7 +374,7 @@ class RuleValidator:
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
 
         rules_result_list = RuleValidator.validate_rule_or_rule_list(ds, r.rules, lut)
-        logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, r.logic)
+        logic_result, logic_message = RuleValidator.evaluate_result_list_logic(rules_result_list, r.logic)
         ctx.assert_true(logic_result, logic_message)
 
         result = ctx.to_result()
@@ -394,11 +394,11 @@ class RuleValidator:
             return [r]
 
     @staticmethod
-    def apply_rule_list_logic(
+    def evaluate_result_list_logic(
         results: list[Result],
         logic: rulebook_model.ERuleListLogic,
     ) -> tuple[bool, str]:
-        validations_ok = [node.value[0] == node.value[1] for node in results]
+        validations_ok = [result_is_success(result) for result in results]
         score = sum(validations_ok)
         total = len(validations_ok)
         if logic == rulebook_model.ERuleListLogic.ALL:

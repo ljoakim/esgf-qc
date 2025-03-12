@@ -21,6 +21,7 @@ def nc_test_file(tmp_path_factory):
 
         # Coordinate variables
         time = ds.createVariable("time", "f8", ("time",))
+        time.standard_name = "time"
         time.axis = "T"
         time.calendar = "standard"
         time[:] = [0.0, 1.0]
@@ -34,7 +35,8 @@ def nc_test_file(tmp_path_factory):
         lon[:] = [0.0, 1.0]
 
         # Data variable
-        pr = ds.createVariable("pr", "f4", ("time", "lat", "lon"))
+        pr = ds.createVariable("pr", "f4", ("time", "lat", "lon"), zlib=True, complevel=1)
+        pr.standard_name = "precipitation_flux"
         pr[:] = [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]
 
     return full_path
