@@ -4,6 +4,7 @@ import pathlib
 import re
 import typing
 
+import colorama
 import netCDF4
 import numpy as np
 import yaml
@@ -89,7 +90,6 @@ class LookupTableCompiler:
 
 
 class LookupTableImpl(dict):
-
     def lookup(self, key: str | rulebook_model.Lookup) -> typing.Any:
         if isinstance(key, rulebook_model.Lookup):
             try:
@@ -105,22 +105,23 @@ class LookupTableImpl(dict):
 
 
 class RuleValidator:
-
     @staticmethod
     def validate_rule_section(
         ds: netCDF4.Dataset,
         rc: rulebook_model.RuleSection,
         lut: LookupTableImpl,
-    ) -> Result:
+    ) -> list[Result]:
         rules_result_list = RuleValidator.validate_rule_or_rule_list(ds, rc.rules, lut)
         logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
-        return Result(
-            BaseCheck.LOW if logic_result else BaseCheck.HIGH,
-            logic_result,
-            name=[f"§{rc.section} {rc.heading}"],
-            msgs=None if logic_result else [logic_message],
-            children=rules_result_list,
-        )
+        return [
+            Result(
+                BaseCheck.LOW if logic_result else BaseCheck.HIGH,
+                logic_result,
+                name=[f"§{rc.section} {rc.heading}"],
+                msgs=None if logic_result else [logic_message],
+                children=rules_result_list,
+            )
+        ]
 
     @staticmethod
     def validate_rule_or_rule_list(
@@ -134,19 +135,19 @@ class RuleValidator:
         rules_result_list = []
         for rule in rules:
             if isinstance(rule, rulebook_model.FileFormatRule):
-                rules_result_list.append(RuleValidator.validate_format(ds, rule, lut))
+                rules_result_list.extend(RuleValidator.validate_format(ds, rule, lut))
             elif isinstance(rule, rulebook_model.DimensionRule):
-                rules_result_list.extend([RuleValidator.validate_dimension(ds, r, lut) for r in RuleValidator.expand_rule("dimension", rule, lut)])
+                rules_result_list.extend(RuleValidator.validate_dimension(ds, rule, lut))
             elif isinstance(rule, rulebook_model.AttributeRule):
-                rules_result_list.extend([RuleValidator.validate_attribute(ds, r, lut) for r in RuleValidator.expand_rule("attribute", rule, lut)])
+                rules_result_list.extend(RuleValidator.validate_attribute(ds, rule, lut))
             elif isinstance(rule, rulebook_model.VariableRule):
-                rules_result_list.extend([RuleValidator.validate_variable(ds, r, lut) for r in RuleValidator.expand_rule("variable", rule, lut)])
+                rules_result_list.extend(RuleValidator.validate_variable(ds, rule, lut))
             elif isinstance(rule, rulebook_model.DataRule):
-                rules_result_list.append(RuleValidator.validate_variable_data(ds, rule, lut))
+                rules_result_list.extend(RuleValidator.validate_variable_data(ds, rule, lut))
             elif isinstance(rule, rulebook_model.ConditionalRule):
-                rules_result_list.append(RuleValidator.validate_conditional(ds, rule, lut))
+                rules_result_list.extend(RuleValidator.validate_conditional(ds, rule, lut))
             elif isinstance(rule, rulebook_model.RuleListLogicRule):
-                rules_result_list.append(RuleValidator.validate_rule_list_logic(ds, rule, lut))
+                rules_result_list.extend(RuleValidator.validate_rule_list_logic(ds, rule, lut))
         return rules_result_list
 
     @staticmethod
@@ -154,138 +155,150 @@ class RuleValidator:
         ds: netCDF4.Dataset,
         r: rulebook_model.FileFormatRule,
         lut: LookupTableImpl,
-    ) -> Result:
+    ) -> list[Result]:
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
         ctx.assert_true(ds.data_model == r.data_model, f"Data model is '{ds.data_model}' but must be '{r.data_model}'.")
         result = ctx.to_result()
         if result_is_success(result):
             result.msgs.append("Format rule met.")
-        return result
+        return [result]
 
     @staticmethod
     def validate_dimension(
         ds: netCDF4.Dataset,
         r: rulebook_model.DimensionRule,
         lut: LookupTableImpl,
-    ) -> Result:
-        dimension_name = lut.lookup(r.dimension)
-        ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
-        try:
-            dimension = ds.dimensions[dimension_name]
-        except KeyError:
-            ctx.assert_true(
-                not r.required,
-                f"Dimension '{dimension_name}' is required but missing.",
-            )
-        else:
-            ctx.assert_true(
-                r.size == 0 or r.size == dimension.size,
-                f"Dimension '{dimension_name}' has size {dimension.size} but must be {r.size}.",
-            )
-        result = ctx.to_result()
-        if result_is_success(result):
-            result.msgs.append(f"Dimension '{dimension_name}' meets specified rules.")
-        return result
+    ) -> list[Result]:
+        results = []
+        rule: rulebook_model.DimensionRule
+        for rule in RuleValidator.expand_rule("dimension", r, lut):
+            dimension_name = lut.lookup(rule.dimension)
+            ctx = TestCtx(BaseCheck.HIGH, messages=[rule.description] if rule.description else None)
+            try:
+                dimension = ds.dimensions[dimension_name]
+            except KeyError:
+                ctx.assert_true(
+                    not rule.required,
+                    f"Dimension '{dimension_name}' is required but missing.",
+                )
+            else:
+                ctx.assert_true(
+                    rule.size == 0 or rule.size == dimension.size,
+                    f"Dimension '{dimension_name}' has size {dimension.size} but must be {rule.size}.",
+                )
+            result = ctx.to_result()
+            if result_is_success(result):
+                result.msgs.append(f"Dimension '{dimension_name}' meets specified rules.")
+            results.append(result)
+        return results
 
     @staticmethod
     def validate_attribute(
         ds: netCDF4.Dataset | netCDF4.Variable,
         r: rulebook_model.AttributeRule,
         lut: LookupTableImpl,
-    ) -> Result:
-        attribute_name = lut.lookup(r.attribute)
-        ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
-        try:
-            value = lut.lookup(ds.getncattr(attribute_name))
-        except AttributeError:
-            ctx.assert_true(
-                not r.required,
-                f"Attribute '{attribute_name}' is required but missing.",
-            )
-        else:
-            if r.must_equal is not None:
-                must_equal = lut.lookup(r.must_equal)
+    ) -> list[Result]:
+        results = []
+        rule: rulebook_model.AttributeRule
+        for rule in RuleValidator.expand_rule("attribute", r, lut):
+            attribute_name = lut.lookup(rule.attribute)
+            ctx = TestCtx(BaseCheck.HIGH, messages=[rule.description] if rule.description else None)
+            try:
+                value = lut.lookup(ds.getncattr(attribute_name))
+            except AttributeError:
                 ctx.assert_true(
-                    equal_or_equal_to_precision(value, must_equal),
-                    f"Attribute '{attribute_name}' has value '{value}' but must equal '{must_equal}'.",
+                    not rule.required,
+                    f"Attribute '{attribute_name}' is required but missing.",
                 )
-            elif r.allowed_values is not None:
-                allowed_values = [lut.lookup(v) for v in lut.lookup(r.allowed_values)]
-                ctx.assert_true(
-                    value in allowed_values,
-                    f"Attribute '{attribute_name}' has value '{value}' but must be one of {allowed_values}.",
-                )
-            elif r.pattern is not None:
-                pattern = lut.lookup(r.pattern)
-                ctx.assert_true(
-                    re.search(pattern, value),
-                    f"Attribute '{attribute_name}' has value '{value}' which does not match the pattern '{pattern}'.",
-                )
-        result = ctx.to_result()
-        if result_is_success(result):
-            result.msgs.append(f"Attribute '{attribute_name}' meets specified rules.")
-        return result
+            else:
+                if rule.must_equal is not None:
+                    must_equal = lut.lookup(rule.must_equal)
+                    ctx.assert_true(
+                        equal_or_equal_to_precision(value, must_equal),
+                        f"Attribute '{attribute_name}' has value '{value}' but must equal '{must_equal}'.",
+                    )
+                elif rule.allowed_values is not None:
+                    allowed_values = [lut.lookup(v) for v in lut.lookup(rule.allowed_values)]
+                    ctx.assert_true(
+                        value in allowed_values,
+                        f"Attribute '{attribute_name}' has value '{value}' but must be one of {allowed_values}.",
+                    )
+                elif rule.pattern is not None:
+                    pattern = lut.lookup(rule.pattern)
+                    ctx.assert_true(
+                        re.search(pattern, value),
+                        f"Attribute '{attribute_name}' has value '{value}' which does not match the pattern '{pattern}'.",
+                    )
+            result = ctx.to_result()
+            if result_is_success(result):
+                result.msgs.append(f"Attribute '{attribute_name}' meets specified rules.")
+            results.append(result)
+        return results
 
     @staticmethod
     def validate_variable(
         var: netCDF4.Variable,
         r: rulebook_model.VariableRule,
         lut: LookupTableImpl,
-    ) -> Result:
-        variable_name = lut.lookup(r.variable)
-        ctx = TestCtx(BaseCheck.HIGH, variable=variable_name, messages=[r.description] if r.description else None)
-        rules_result_list = []
-        try:
-            variable = var.variables[variable_name]
-        except KeyError:
-            ctx.assert_true(
-                not r.required,
-                f"Variable '{variable_name}' is required but missing.",
-            )
-        else:
-            if r.dimensions is not None:
-                dimensions = tuple([lut.lookup(d) for d in r.dimensions])
+    ) -> list[Result]:
+        results = []
+        rule: rulebook_model.VariableRule
+        for rule in RuleValidator.expand_rule("variable", r, lut):
+            variable_name = lut.lookup(rule.variable)
+            ctx = TestCtx(BaseCheck.HIGH, variable=variable_name, messages=[rule.description] if rule.description else None)
+            rules_result_list = []
+            try:
+                variable = var.variables[variable_name]
+            except KeyError:
                 ctx.assert_true(
-                    variable.dimensions == dimensions,
-                    f"Variable '{variable_name}' has dimensions {variable.dimensions}, must be {dimensions}.",
+                    not rule.required,
+                    f"Variable '{variable_name}' is required but missing.",
                 )
-            filters = variable.filters()
-            if r.compression_type != rulebook_model.ECompressionType.UNSPECIFIED:
-                var_compression_type = rulebook_model.ECompressionType.NONE
-                for t in rulebook_model.ECompressionType:
-                    if t not in [rulebook_model.ECompressionType.UNSPECIFIED, rulebook_model.ECompressionType.NONE] and filters[t.value]:
-                        var_compression_type = t.value
-                        break
-                ctx.assert_true(
-                    var_compression_type == r.compression_type.value,
-                    f"Variable '{variable_name}' has compression type '{var_compression_type}', must be '{r.compression_type.value}'.",
-                )
-            if r.compression_level is not None:
-                ctx.assert_true(
-                    filters["complevel"] == r.compression_level,
-                    f"Variable '{variable_name}' has compression level {filters['complevel']}, must be {r.compression_level}.",
-                )
+            else:
+                if rule.dimensions is not None:
+                    dimensions = tuple([lut.lookup(d) for d in rule.dimensions])
+                    ctx.assert_true(
+                        variable.dimensions == dimensions,
+                        f"Variable '{variable_name}' has dimensions {variable.dimensions}, must be {dimensions}.",
+                    )
+                filters = variable.filters()
+                if rule.compression_type != rulebook_model.ECompressionType.UNSPECIFIED:
+                    var_compression_type = rulebook_model.ECompressionType.NONE
+                    for t in rulebook_model.ECompressionType:
+                        if t not in [rulebook_model.ECompressionType.UNSPECIFIED, rulebook_model.ECompressionType.NONE] and filters[t.value]:
+                            var_compression_type = t.value
+                            break
+                    ctx.assert_true(
+                        var_compression_type == rule.compression_type.value,
+                        f"Variable '{variable_name}' has compression type '{var_compression_type}', must be '{rule.compression_type.value}'.",
+                    )
+                if rule.compression_level is not None:
+                    ctx.assert_true(
+                        filters["complevel"] == rule.compression_level,
+                        f"Variable '{variable_name}' has compression level {filters['complevel']}, must be {rule.compression_level}.",
+                    )
 
-            rules = r.rules if isinstance(r.rules, list) else [r.rules]
-            if len(rules) > 0:
-                rules_result_list = RuleValidator.validate_rule_or_rule_list(variable, rules, lut)
-                logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
-                ctx.assert_true(logic_result, logic_message)
+                variable_rules = rule.rules if isinstance(rule.rules, list) else [rule.rules]
+                if len(variable_rules) > 0:
+                    rules_result_list = RuleValidator.validate_rule_or_rule_list(variable, variable_rules, lut)
+                    logic_result, logic_message = RuleValidator.apply_rule_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
+                    ctx.assert_true(logic_result, logic_message)
 
-        result = ctx.to_result()
-        result.children = rules_result_list
-        if result_is_success(result):
-            result.msgs.append(f"Variable '{variable_name}' meets specified rules.")
-        else:
-            result.msgs.insert(0, f"Variable '{variable_name}' has issues.")
-        return result
+            result = ctx.to_result()
+            result.children = rules_result_list
+            if result_is_success(result):
+                result.msgs.append(f"Variable '{variable_name}' meets specified rules.")
+            else:
+                result.msgs.insert(0, f"Variable '{variable_name}' has issues.")
+            results.append(result)
+        return results
 
     @staticmethod
     def validate_variable_data(
         var: netCDF4.Variable,
         r: rulebook_model.DataRule,
         lut: LookupTableImpl,
-    ) -> Result:
+    ) -> list[Result]:
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
         ctx.assert_true(
             var.dtype.name == r.dtype,
@@ -328,14 +341,14 @@ class RuleValidator:
         result = ctx.to_result()
         if result_is_success(result):
             result.msgs.append(f"Data of variable '{lut.lookup(var.name)}' meets specified rules.")
-        return result
+        return [result]
 
     @staticmethod
     def validate_conditional(
         ds: netCDF4.Dataset | netCDF4.Variable,
         r: rulebook_model.ConditionalRule,
         lut: LookupTableImpl,
-    ) -> Result:
+    ) -> list[Result]:
         ctx = TestCtx(BaseCheck.HIGH, messages=[r.description] if r.description else None)
         dependent_result_list = []
 
@@ -350,7 +363,7 @@ class RuleValidator:
         result.children = dependent_result_list
         if result_is_success(result):
             result.msgs.append("Conditional rule met.")
-        return result
+        return [result]
 
     @staticmethod
     def validate_rule_list_logic(
@@ -366,7 +379,7 @@ class RuleValidator:
 
         result = ctx.to_result()
         result.children = rules_result_list
-        return result
+        return [result]
 
     @staticmethod
     def expand_rule(
@@ -429,8 +442,9 @@ class RuleBookImpl:
             return RuleBookImpl.from_str(f.read())
 
     def validate(self, ds: netCDF4.Dataset) -> list[Result]:
+        colorama.init()
+        lut = LookupTableImpl()
         if self._rulebook.lookup_table:
-            lut = LookupTableImpl()
             try:
                 LookupTableCompiler.compile_cv(lut, self._rulebook.lookup_table.cv)
                 LookupTableCompiler.compile_cf(lut, self._rulebook.lookup_table.cf, ds)
@@ -440,10 +454,11 @@ class RuleBookImpl:
 
         results = []
         for rule_section in self._rulebook.rule_sections:
-            result = RuleValidator.validate_rule_section(ds, rule_section, lut)
-            result.msgs = [self._flatten_result_tree(result)]  # Assign single hierarchical error message
-            result.children = None  # Disconnect children
-            results.append(result)
+            section_results = RuleValidator.validate_rule_section(ds, rule_section, lut)
+            for section_result in section_results:
+                section_result.msgs = [self._flatten_result_tree(section_result)]  # Assign single hierarchical error message
+                section_result.children = None  # Disconnect children
+            results.extend(section_results)
         return results
 
     def _flatten_result_tree(self, result, indent=0) -> str:
@@ -452,9 +467,9 @@ class RuleBookImpl:
         #       Formatting should be taken care of outside of the checker.
         #
         indent_string = "\n" + "  " * (indent + 1)
-        err = "\u2714 " if result_is_success(result) else "\u2716 "
+        err = colorama.Fore.GREEN + "\u2714 " if result_is_success(result) else colorama.Fore.RED + "\u2716 "
         level_msg = (indent_string if indent > 0 else "") + err + (indent_string + "  ").join(result.msgs)
         if not result_is_success(result):
             for child in result.children:
                 level_msg = level_msg + self._flatten_result_tree(child, indent + 1)
-        return level_msg
+        return level_msg + colorama.Style.RESET_ALL
