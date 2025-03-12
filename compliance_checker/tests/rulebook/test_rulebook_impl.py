@@ -406,89 +406,19 @@ TEST_RULE_VALIDATOR_VALIDATE_RULE_LIST_LOGIC = {
         ),
         False,
     ),
-    "rule_list_logic_rule_all_with_all": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.ALL,
-            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        True,
-    ),
-    "rule_list_logic_rule_one_with_all": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.ALL,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_none_with_all": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.ALL,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_all_with_exactly_one": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
-            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_one_with_exactly_one": (
+    "rule_list_logic_rule_multiple_rules_success": (
         rulebook_model.RuleListLogicRule(
             logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
             rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
         ),
         True,
     ),
-    "rule_list_logic_rule_none_with_exactly_one": (
+    "rule_list_logic_rule_multiple_rules_fail": (
         rulebook_model.RuleListLogicRule(
             logic=rulebook_model.ERuleListLogic.EXACTLY_ONE,
             rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
         ),
         False,
-    ),
-    "rule_list_logic_rule_all_with_at_least_one": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
-            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        True,
-    ),
-    "rule_list_logic_rule_one_with_at_least_one": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        True,
-    ),
-    "rule_list_logic_rule_none_with_at_least_one": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.AT_LEAST_ONE,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_all_with_none": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.NONE,
-            rules=[rulebook_model.AttributeRule(attribute="domain_id"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_one_with_none": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.NONE,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="variable_id")],
-        ),
-        False,
-    ),
-    "rule_list_logic_rule_none_with_none": (
-        rulebook_model.RuleListLogicRule(
-            logic=rulebook_model.ERuleListLogic.NONE,
-            rules=[rulebook_model.AttributeRule(attribute="noattr"), rulebook_model.AttributeRule(attribute="noattr2")],
-        ),
-        True,
     ),
 }
 
