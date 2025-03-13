@@ -15,16 +15,54 @@ from compliance_checker.rulebook import cmiputil, rulebook_model
 
 
 def result_is_success(result: Result) -> bool:
+    """Check if a compliance checker result is success.
+
+    A Result instance has two different ways of marking
+    success, wither with a bool value, or by keeping
+    a score tuple with two values, both of which need to
+    be the same for the result to be considered a success.
+
+    Parameters
+    ----------
+    result : compliance_checker.base.Result
+
+    Returns
+    -------
+    bool
+        True if the value of the result is either
+        (1) a bool of value True, or
+        (2) a tuple of two equal values.
+    """
     if isinstance(result.value, tuple):
         return result.value[0] == result.value[1]
     return result.value
 
 
-def equal_or_equal_to_precision(a: typing.Any, b: typing.Any) -> bool:
+def equal_to_precision(a: typing.Any, b: typing.Any) -> bool:
+    """Check equality of two values, to within precision.
+
+    If either of the two values is of a float type, they
+    will be checked for equality to within the precision
+    of the value with the lowest precision type.
+
+    If neither of the two values is of a float type,
+    standard equality will be checked.
+
+    Parameters
+    ----------
+    a : typing.Any
+    b : typing.Any
+
+    Returns
+    -------
+    bool
+        True if the values are equal to within precision of
+        the value with lowest precision type.
+    """
     float_types = (float, np.float32, np.float64)
     if isinstance(a, float_types) or isinstance(b, float_types):
-        if isinstance(a, np.float32):
-            return a == np.float32(b)
+        if isinstance(a, np.float32) or isinstance(b, np.float32):
+            return np.float32(a) == np.float32(b)
         else:
             return np.float64(a) == np.float64(b)
     else:
@@ -214,7 +252,7 @@ class RuleValidator:
                 if rule.must_equal is not None:
                     must_equal = lut.lookup(rule.must_equal)
                     ctx.assert_true(
-                        equal_or_equal_to_precision(value, must_equal),
+                        equal_to_precision(value, must_equal),
                         f"Attribute '{attribute_name}' has value '{value}' but must equal '{must_equal}'.",
                     )
                 elif rule.allowed_values is not None:

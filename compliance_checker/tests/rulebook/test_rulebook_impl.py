@@ -1,4 +1,5 @@
 import netCDF4
+import numpy as np
 import pytest
 
 from compliance_checker.base import Result
@@ -10,27 +11,39 @@ def _check_all_results(results):
     return len(failed) == 0, str([result.msgs for result in failed])
 
 
-def test_rulebook_from_dict(nc_test_file):
-    rulebook_dict = {
-        "rulebook": "Test rulebook from dict",
-        "lookup_table": {"cv": {"domain_id": ["EUR-12"], "variable_id": ["pr"]}},
-        "rule_sections": [{"section": "1", "heading": "Format", "rules": [{"data_model": "NETCDF4_CLASSIC"}]}],
-    }
-    rulebook = rulebook_impl.RuleBookImpl(rulebook_dict)
-    assert _check_all_results(rulebook.validate(netCDF4.Dataset(nc_test_file)))
+TEST_RESULT_IS_SUCCESS = {
+    "bool_success": (Result(value=True), True),
+    "bool_fail": (Result(value=False), False),
+    "tuple_success": (Result(value=(2,2)), True),
+    "tuple_faile": (Result(value=(1,2)), False),
+}
+
+@pytest.mark.parametrize(
+    "result,expected",
+    TEST_RESULT_IS_SUCCESS.values(),
+    ids=TEST_RESULT_IS_SUCCESS.keys(),
+)
+def test_result_is_success(result, expected):
+    assert rulebook_impl.result_is_success(result) == expected
 
 
-def test_rulebook_from_str(nc_test_file):
-    rulebook_str = """
-    rulebook: "Test rulebook from string"
-    rule_sections:
-      - section: "1"
-        heading: "Format"
-        rules:
-          - { data_model: "NETCDF4_CLASSIC" }
-    """
-    rulebook = rulebook_impl.RuleBookImpl.from_str(rulebook_str)
-    assert _check_all_results(rulebook.validate(netCDF4.Dataset(nc_test_file)))
+TEST_EQUAL_TO_PRECISION = {
+    "float_float_success": (1.0e+20, 1.0e+20, True),
+    "float_float64_success": (1.0e+20, np.float64(1.0e+20), True),
+    "float_float32_success": (1.0e+20, np.float32(1.0e+20), True),
+    "float_float32_to_precision_success": (1.0000000200408773e+20, np.float32(1.0e+20), True),
+    "float_float32_fail": (1.0e+20, np.float32(1.0000001e+20), False),
+    "int_int_success": (2, 2, True),
+    "str_str_success": ("2", "2", True),
+}
+
+@pytest.mark.parametrize(
+    "a,b,expected",
+    TEST_EQUAL_TO_PRECISION.values(),
+    ids=TEST_EQUAL_TO_PRECISION.keys(),
+)
+def test_equal_to_precision(a, b, expected):
+    assert rulebook_impl.equal_to_precision(a, b) == expected
 
 
 ##############################################
@@ -124,6 +137,43 @@ def test_lookup_table_compiler_compile_cmip(nc_test_file, cmip, expected):
     lut = rulebook_impl.LookupTableImpl()
     rulebook_impl.LookupTableCompiler.compile_cmip(lut, cmip, netCDF4.Dataset(nc_test_file))
     assert lut == expected
+
+
+##############################################
+# LookupTableImpl
+
+
+TEST_LOOKUP_TABLE_IMPL_INST = rulebook_impl.LookupTableImpl(
+    {
+        "A1": {
+            "B": {
+                "C1": 1,
+                "C2": 2,
+            }
+        },
+        "A2": {
+            "B3": 3,
+            "B4": 4,
+        },
+    }
+)
+
+
+TEST_LOOKUP_TABLE_IMPL = {
+    "lookup_A1.B.C1": (rulebook_model.Lookup(lookup="A1.B.C1"), 1),
+    "lookup_A1.B.C2": (rulebook_model.Lookup(lookup="A1.B.C2"), 2),
+    "lookup_A2.B3": (rulebook_model.Lookup(lookup="A2.B3"), 3),
+    "lookup_A2.B4": (rulebook_model.Lookup(lookup="A2.B4"), 4),
+}
+
+
+@pytest.mark.parametrize(
+    "key,expected",
+    TEST_LOOKUP_TABLE_IMPL.values(),
+    ids=TEST_LOOKUP_TABLE_IMPL.keys(),
+)
+def test_lookup_table_impl(key, expected):
+    assert TEST_LOOKUP_TABLE_IMPL_INST.lookup(key) == expected
 
 
 ##############################################
@@ -482,3 +532,29 @@ TEST_RULE_VALIDATOR_EVALUATE_RESULT_LIST_LOGIC = {
 def test_rule_validator_evaluate_result_list_logic(result_list, logic, expected):
     result, msg = rulebook_impl.RuleValidator.evaluate_result_list_logic(result_list, logic)
     assert result == expected, msg
+
+
+##############################################
+# RuleBookImpl
+
+def test_rulebook_from_dict(nc_test_file):
+    rulebook_dict = {
+        "rulebook": "Test rulebook from dict",
+        "lookup_table": {"cv": {"domain_id": ["EUR-12"], "variable_id": ["pr"]}},
+        "rule_sections": [{"section": "1", "heading": "Format", "rules": [{"data_model": "NETCDF4_CLASSIC"}]}],
+    }
+    rulebook = rulebook_impl.RuleBookImpl(rulebook_dict)
+    assert _check_all_results(rulebook.validate(netCDF4.Dataset(nc_test_file)))
+
+
+def test_rulebook_from_str(nc_test_file):
+    rulebook_str = """
+    rulebook: "Test rulebook from string"
+    rule_sections:
+      - section: "1"
+        heading: "Format"
+        rules:
+          - { data_model: "NETCDF4_CLASSIC" }
+    """
+    rulebook = rulebook_impl.RuleBookImpl.from_str(rulebook_str)
+    assert _check_all_results(rulebook.validate(netCDF4.Dataset(nc_test_file)))
