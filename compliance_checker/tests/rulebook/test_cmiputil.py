@@ -69,6 +69,11 @@ TEST_CONVERT_TIME_RANGE_TO_DATETIMES = {
         "standard",
         (cftime.datetime(2020, 4, 3), cftime.datetime(2023, 8, 16)),
     ),
+    "day_resolution_2": (
+        "19511201-19551231",
+        "standard",
+        (cftime.datetime(1951, 12, 1), cftime.datetime(1955, 12, 31)),
+    ),
     "hour_resolution": (
         "2020040302-2023081622",
         "standard",
@@ -100,6 +105,7 @@ TEST_TIME_RANGE_TO_EXPECTED_POINT_COUNT = {
     "mon_standard": ("202004-202308", "mon", "standard", 41),
     "mon_360": ("202004-202308", "mon", "360_day", 41),
     "day_standard": ("20200101-20230101", "day", "standard", 1097),
+    "day_standard_2": ("19511201-19551231", "day", "standard", 1492),
     "day_360": ("20200101-20230101", "day", "360_day", 1081),
     "day_365": ("20200101-20230101", "day", "365_day", 1096),
     "6hr_standard": ("2020010100-2020030106", "6hr", "standard", 242),

@@ -119,8 +119,6 @@ def convert_time_range_to_datetimes(time_range: str, calendar: str) -> tuple[cft
 def time_range_to_expected_point_count(time_range: str, frequency: str, calendar: str) -> int:
     """Calculate expected number of data points for time range.
 
-
-
     Parameters
     ----------
     time_range : str
