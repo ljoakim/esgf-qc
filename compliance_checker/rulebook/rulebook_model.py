@@ -128,10 +128,16 @@ class RuleListLogicRule(RuleBaseModel):
     rules: RuleUnion | RuleUnionList
 
 
-class RuleSection(pydantic.BaseModel):
+class RuleSection(RuleBaseModel):
     section: str = pydantic.Field(pattern=r"^[0-9]+(\.[0-9]+)*$")
-    heading: str
+    severity: int = 3
     rules: RuleUnion | RuleUnionList
+
+    @pydantic.field_validator("severity", mode="before")
+    @classmethod
+    def convert_severity(cls, value: str) -> int:
+        severity_map = {"info": 1, "warning": 2, "error": 3}
+        return severity_map[value.lower()]
 
 
 class RuleBookModel(pydantic.BaseModel):

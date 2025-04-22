@@ -153,9 +153,9 @@ class RuleValidator:
         logic_result, logic_message = RuleValidator.evaluate_result_list_logic(rules_result_list, rulebook_model.ERuleListLogic.ALL)
         return [
             Result(
-                BaseCheck.LOW if logic_result else BaseCheck.HIGH,
+                rc.severity,
                 logic_result,
-                name=[f"§{rc.section} {rc.heading}"],
+                name=[f"§{rc.section} {rc.description}"],
                 msgs=None if logic_result else [logic_message],
                 children=rules_result_list,
             )
@@ -494,20 +494,21 @@ class RuleBookImpl:
         for rule_section in self._rulebook.rule_sections:
             section_results = RuleValidator.validate_rule_section(ds, rule_section, lut)
             for section_result in section_results:
-                section_result.msgs = [self._flatten_result_tree(section_result)]  # Assign single hierarchical error message
+                section_result.msgs = [self._flatten_result_tree(section_result, section_result.weight)]  # Assign single hierarchical error message
                 section_result.children = None  # Disconnect children
             results.extend(section_results)
         return results
 
-    def _flatten_result_tree(self, result, indent=0) -> str:
+    def _flatten_result_tree(self, result, severity=3, indent=0) -> str:
         #
         # TODO: This is a temporary solution with some formatting magic.
         #       Formatting should be taken care of outside of the checker.
         #
+        error_color = colorama.Fore.RED if severity == 3 else colorama.Fore.YELLOW
         indent_string = "\n" + "  " * (indent + 1)
-        err = colorama.Fore.GREEN + "\u2714 " if result_is_success(result) else colorama.Fore.RED + "\u2716 "
+        err = colorama.Fore.GREEN + "\u2714 " if result_is_success(result) else error_color + "\u2716 "
         level_msg = (indent_string if indent > 0 else "") + err + (indent_string + "  ").join(result.msgs)
         if not result_is_success(result):
             for child in result.children:
-                level_msg = level_msg + self._flatten_result_tree(child, indent + 1)
+                level_msg = level_msg + self._flatten_result_tree(child, severity, indent + 1)
         return level_msg + colorama.Style.RESET_ALL

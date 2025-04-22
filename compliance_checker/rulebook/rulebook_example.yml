@@ -62,14 +62,14 @@ rule_sections:
   # Example: checking the format of the netcdf data.
   #
   - section: "1"
-    heading: "Format"
+    description: "Format"
     rules:
       - { data_model: "NETCDF4_CLASSIC" }
 
   # Example: checking dimensions.
   #
   - section: "2"
-    heading: "Dimensions"
+    description: "Dimensions"
     rules:
       # With a "dimension" key in the brackets, the rule will translate to
       # a dimension rule. Writing a dimension rule will by default make the
@@ -97,7 +97,7 @@ rule_sections:
   # The names of the coordinate variables are looked up in the lookup table.
   #
   - section: "3"
-    heading: "Coordinate variables"
+    description: "Coordinate variables"
     rules:
       - variable: { lookup: "cf.axis.T" }
         dimensions: [{ lookup: "cf.axis.T" }]
@@ -125,7 +125,7 @@ rule_sections:
   # Example: global attributes.
   #
   - section: "4"
-    heading: "Global attribute values"
+    description: "Global attribute values"
     rules:
       - { attribute: "Conventions", allowed_values: ["CF-1.7", "CF-1.11"] }
       - { attribute: "creation_date", pattern: "^[1-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z$" }
@@ -143,7 +143,7 @@ rule_sections:
   # Example: coordinate system.
   #
   - section: "5"
-    heading: "Coordinate system"
+    description: "Coordinate system"
     rules:
       # A "description" can be added to a rule. This description will be added
       # to the result output whenever a rule fails. Since many rules generally
@@ -175,7 +175,8 @@ rule_sections:
   # Example: data variable checks.
   #
   - section: "6"
-    heading: "Common data variable requirements"
+    description: "Common data variable requirements"
+    severity: "warning"
     rules:
       - description: "Check existance of one and only one data variable."
         logic: "exactly one"
@@ -202,10 +203,20 @@ rule_sections:
           - { attribute: "missing_value", must_equal: 1.0e+20 }
           - { attribute: "_FillValue", must_equal: 1.0e+20 }
 
+      - variable: "tasmax"
+        required: false
+        rules:
+          - { attribute: "standard_name", must_equal: "air_temperature" }
+          - { attribute: "long_name", must_equal: "Daily Maximum Near-Surface Air Temperature" }
+          - { attribute: "cell_methods", must_equal: "time: maximum" }
+          - { attribute: "coordinates", allowed_values: ["height lat lon", "lat lon height"] }
+          - { attribute: "units", must_equal: "K" }
+          - { dtype: "float32", min: 173.15, max: 373.15 }
+
   # Example: requirements for specific data variables.
   #
   - section: "7"
-    heading: "Data variable attribute requirements"
+    description: "Data variable attribute requirements"
     rules:
       # The variables must be set as optional, otherwise all variables will be
       # required to exist. Unique existance is checked in another rule.

@@ -184,31 +184,46 @@ TEST_RULE_VALIDATOR_VALIDATE_RULE_SECTION = {
     "rule_section_with_format_rule": (
         rulebook_model.RuleSection(
             section="1",
-            heading="Test section",
+            description="Test section",
+            severity="error",
             rules=rulebook_model.FileFormatRule(data_model="NETCDF4_CLASSIC"),
         ),
         ["§1 Test section"],
+        3,
     ),
     "rule_section_with_format_rule_in_list": (
         rulebook_model.RuleSection(
             section="2",
-            heading="Test section",
+            description="Test section",
+            severity="warning",
             rules=[rulebook_model.FileFormatRule(data_model="NETCDF4_CLASSIC")],
         ),
         ["§2 Test section"],
+        2,
+    ),
+    "rule_section_with_format_rule_info": (
+        rulebook_model.RuleSection(
+            section="3",
+            description="Test section",
+            severity="info",
+            rules=[rulebook_model.FileFormatRule(data_model="NETCDF4_CLASSIC")],
+        ),
+        ["§3 Test section"],
+        1,
     ),
 }
 
 
 @pytest.mark.parametrize(
-    "rule_section,expected_result_name",
+    "rule_section,expected_result_name,expected_result_weight",
     TEST_RULE_VALIDATOR_VALIDATE_RULE_SECTION.values(),
     ids=TEST_RULE_VALIDATOR_VALIDATE_RULE_SECTION.keys(),
 )
-def test_rule_validator_validate_rule_section(nc_test_file, rule_section, expected_result_name):
+def test_rule_validator_validate_rule_section(nc_test_file, rule_section, expected_result_name, expected_result_weight):
     results = rulebook_impl.RuleValidator.validate_rule_section(netCDF4.Dataset(nc_test_file), rule_section, rulebook_impl.LookupTableImpl())
     assert _check_all_results(results)
     assert results[0].name == expected_result_name
+    assert results[0].weight == expected_result_weight
     assert len(results) == 1
 
 
@@ -541,7 +556,7 @@ def test_rulebook_from_dict(nc_test_file):
     rulebook_dict = {
         "rulebook": "Test rulebook from dict",
         "lookup_table": {"cv": {"domain_id": ["EUR-12"], "variable_id": ["pr"]}},
-        "rule_sections": [{"section": "1", "heading": "Format", "rules": [{"data_model": "NETCDF4_CLASSIC"}]}],
+        "rule_sections": [{"section": "1", "description": "Format", "rules": [{"data_model": "NETCDF4_CLASSIC"}]}],
     }
     rulebook = rulebook_impl.RuleBookImpl(rulebook_dict)
     assert _check_all_results(rulebook.validate(netCDF4.Dataset(nc_test_file)))
@@ -552,7 +567,7 @@ def test_rulebook_from_str(nc_test_file):
     rulebook: "Test rulebook from string"
     rule_sections:
       - section: "1"
-        heading: "Format"
+        description: "Format"
         rules:
           - { data_model: "NETCDF4_CLASSIC" }
     """
